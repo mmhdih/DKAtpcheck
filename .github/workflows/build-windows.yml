@@ -1,0 +1,41 @@
+name: Build Windows executable
+
+# Runs automatically on every push to main/master, and can also be
+# triggered manually from the "Actions" tab in GitHub (the "Run workflow"
+# button) without needing to push anything.
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    # A clean, disposable Windows machine provided by GitHub — not your
+    # own computer, so none of its restrictions (admin rights, registry,
+    # Microsoft Store Python, long-path limits) apply here.
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python (regular python.org build, not Microsoft Store)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-build.txt
+
+      - name: Build ATP_Analyzer.exe
+        run: pyinstaller --noconfirm build_windows.spec
+
+      - name: Upload the built app as a downloadable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATP_Analyzer-windows
+          path: dist/ATP_Analyzer/
+          retention-days: 14
