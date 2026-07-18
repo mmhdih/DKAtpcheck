@@ -26,7 +26,7 @@ import pandas as pd
 
 from .config import CanonicalColumns, LiveDataColumns, SoldDataColumns, get_settings
 from .utils import get_logger, normalize_key, normalize_text
-from .weight_parser import extract_weight_from_text, to_numeric_weight
+from .weight_parser import to_numeric_weight
 
 logger = get_logger(__name__)
 
@@ -157,7 +157,7 @@ def load_sold_data(file: BinaryIO | bytes) -> LoadResult:
     )
 
     df[CanonicalColumns.SELLER_KEY] = df[CanonicalColumns.SELLER].map(normalize_key)
-    df[CanonicalColumns.WEIGHT] = df[CanonicalColumns.SOURCE_TEXT].map(extract_weight_from_text)
+    df[CanonicalColumns.WEIGHT] = df[CanonicalColumns.SOURCE_TEXT].map(to_numeric_weight)
 
     unresolved = int(df[CanonicalColumns.WEIGHT].isna().sum())
     if unresolved:

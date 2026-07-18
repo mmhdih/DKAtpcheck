@@ -77,6 +77,19 @@ def test_load_sold_data_happy_path_extracts_weight_from_product_name():
     assert result.df["weight"].iloc[0] == pytest.approx(0.65)
 
 
+def test_load_sold_data_extracts_weight_from_plain_numeric_product_name():
+    df = pd.DataFrame(
+        {
+            "Seller Name": ["ACME"],
+            "Product Id": ["D1"],
+            "Product Item Id": ["D1C1"],
+            "Product Item Name": [0.5],
+        }
+    )
+    result = load_sold_data(_to_xlsx_bytes(df))
+    assert result.df["weight"].iloc[0] == pytest.approx(0.5)
+
+
 def test_load_sold_data_missing_column_raises():
     df = pd.DataFrame({"Seller Name": ["ACME"]})
     with pytest.raises(ExcelValidationError):
