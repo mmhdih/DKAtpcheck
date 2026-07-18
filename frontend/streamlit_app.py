@@ -177,9 +177,15 @@ if result:
     tab_summary, tab_missing = st.tabs(["📊 Summary", "🔻 ATP Missing"])
 
     with tab_summary:
+        styled_summary = summary_df.style.format({"DKPC ATP %": "{:.2f}%", "DKP ATP %": "{:.2f}%"})
+        try:
+            styled_summary = styled_summary.background_gradient(
+                subset=["DKPC ATP %", "DKP ATP %"], cmap="RdYlGn", vmin=0, vmax=100
+            )
+        except ImportError:
+            st.caption("Install matplotlib to enable colored cell shading in this table.")
         st.dataframe(
-            summary_df.style.format({"DKPC ATP %": "{:.2f}%", "DKP ATP %": "{:.2f}%"})
-            .background_gradient(subset=["DKPC ATP %", "DKP ATP %"], cmap="RdYlGn", vmin=0, vmax=100),
+            styled_summary,
             use_container_width=True,
             hide_index=True,
         )

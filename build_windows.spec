@@ -30,6 +30,7 @@ COLLECT_ALL_PACKAGES = (
     "pandas",
     "numpy",
     "openpyxl",
+    "matplotlib",
     "python_calamine",
     "pydantic",
     "pydantic_settings",
