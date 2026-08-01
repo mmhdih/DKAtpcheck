@@ -15,6 +15,8 @@ from enum import Enum
 
 from pydantic import BaseModel, Field, field_validator
 
+from .config import TailClassification
+
 
 class WeightResolution(str, Enum):
     """How a sold row's weight was determined, for transparency in reports."""
@@ -43,6 +45,17 @@ class CalculationRequest(BaseModel):
         ge=0,
         description="Weight tolerance percentage. 0 means exact weight match only.",
     )
+    bullion_categories: list[str] = Field(
+        default_factory=list,
+        description="category_name_fa values to treat as Bullion; everything else is Jewelry.",
+    )
+    tail_badges: list[str] = Field(
+        default_factory=lambda: list(TailClassification.ALL),
+        description="Which ST/MT/LT Item-Tail badges to include. Defaults to all three (no filtering).",
+    )
+    generate_seller_zip: bool = Field(
+        False, description="Also build the per-seller NOT-ATP ZIP export."
+    )
 
     @field_validator("tolerance_pct")
     @classmethod
@@ -52,20 +65,32 @@ class CalculationRequest(BaseModel):
         return value
 
 
-class SummaryRow(BaseModel):
-    """One row of the Summary table — percentages only, per the spec."""
+class CategoryListResponse(BaseModel):
+    """Response of POST /api/v1/sold-data/categories."""
 
+    categories: list[str]
+
+
+class SummaryRow(BaseModel):
+    """One row of the Summary table — percentages only, per the spec, split by category bucket."""
+
+    seller_id: str
     seller: str
-    dkpc_atp_pct: float = Field(..., ge=0, le=100)
-    dkp_atp_pct: float = Field(..., ge=0, le=100)
+    dkpc_atp_pct_bullion: float = Field(..., ge=0, le=100)
+    dkp_atp_pct_bullion: float = Field(..., ge=0, le=100)
+    dkpc_atp_pct_jewelry: float = Field(..., ge=0, le=100)
+    dkp_atp_pct_jewelry: float = Field(..., ge=0, le=100)
 
 
 class MissingRow(BaseModel):
     """One row of the ATP_Missing table — a sold DKPC that is not ATP."""
 
+    seller_id: str
     seller: str
     dkp: str
     dkpc: str
+    category: str
+    bucket: str
 
 
 class CalculationMeta(BaseModel):
@@ -78,6 +103,9 @@ class CalculationMeta(BaseModel):
     sold_dkp_unique: int
     sold_weight_unresolved_count: int
     tolerance_pct: float
+    bullion_categories_selected: list[str] = Field(default_factory=list)
+    tail_badges_selected: list[str] = Field(default_factory=lambda: list(TailClassification.ALL))
+    seller_zip_generated: bool = False
     execution_seconds: float
     warnings: list[str] = Field(default_factory=list)
 

@@ -20,10 +20,13 @@ atp_analyzer/
 │   ├── weight_parser.py        extracts weight from "... | 0.65 گرم |"
 │   ├── excel_loader.py          reads & validates both Excel files
 │   ├── atp_engine.py           the ATP rule pipeline (the core)
+│   ├── tail_classifier.py      ST/MT/LT Item-Tail classification (ABC/Pareto)
 │   ├── summary_generator.py    builds the Summary table
-│   └── missing_generator.py    builds the ATP_Missing table
+│   ├── missing_generator.py    builds the ATP_Missing table
+│   ├── seller_export.py        per-seller NOT-ATP ZIP export
+│   └── templates.py            downloadable example Live_Data/Sold_Data templates
 ├── frontend/
-│   └── streamlit_app.py        upload UI, results, downloads
+│   └── streamlit_app.py        upload UI, filters, results, downloads
 ├── tests/
 ├── conftest.py
 └── requirements.txt
@@ -64,14 +67,39 @@ export ATP_BACKEND_URL=http://your-backend-host:8000
 python -m pytest tests/ -v
 ```
 
+## Column mapping
+
+`Seller_ID` / `marketplace_seller_id` is the **join key** between the two
+files (matched after normalization/casefolding) — seller *name* is kept
+purely for display and is never used to match rows across files.
+
+| Live_Data column | Sold_Data column | Canonical field | Notes |
+|---|---|---|---|
+| `Seller_ID` | `marketplace_seller_id` | `seller_id` | join key |
+| `Seller_Name` | `marketplace_seller_name` | `seller` | display only |
+| `DKP` | `product_id` | `dkp` | |
+| `DKPC` | `product_variant_id` | `dkpc` | |
+| `Size_Name` | `product_variant_name_fa` | `weight` | parsed via the same numeric/"`<n> گرم`" logic on both sides |
+| — | `category_name_fa` | `category` | Sold_Data only; drives the Bullion/Jewelry bucket |
+| — | `sum_net_item_fcast` | `net_item_fcast` | Sold_Data only; drives the ST/MT/LT tail badge |
+
+Both uploaded files' required columns are validated on upload; download
+example templates straight from the app (`⬇ Live_Data template` /
+`⬇ Sold_Data template` buttons, or `GET /api/v1/templates/live-data` /
+`GET /api/v1/templates/sold-data`) so column names never have to be
+guessed.
+
 ## How matching works
 
 For every **unique** sold DKPC (repeat sales of the same DKPC count once):
 
 1. **Exact match** — if that DKPC exists live under the same seller → ATP.
 2. **Weight tolerance** — only if step 1 failed *and* a weight could be
-   parsed from `Product Item Name`: ATP if any live DKPC of the same
-   seller has a weight within `± tolerance%` of the sold weight.
+   parsed from `product_variant_name_fa`: ATP if any live DKPC of the
+   same seller **and the same DKP** has a weight within `± tolerance%` of
+   the sold weight. The tolerance search is scoped to the same product —
+   a live item of a *different* DKP never grants ATP just because its
+   weight happens to be close.
 3. If no weight could be parsed, only step 1 applies (no fallback).
 
 **DKP-level ATP** is computed independently and is weight-agnostic: a sold
@@ -79,6 +107,42 @@ DKP is ATP if the seller has *any* live DKPC under that DKP.
 
 Tolerance is a request parameter, not hardcoded — pass `0` for exact-only
 matching, or any value the seller wants to try.
+
+## Category buckets (Bullion vs Jewelry)
+
+The Summary table splits DKPC/DKP ATP% into two independently-computed
+buckets: **Bullion** (شمش) and **Jewelry** (زیور). Which `category_name_fa`
+values count as Bullion is chosen per calculation (`bullion_categories`
+request field) — fetch the distinct categories found in an uploaded
+Sold_Data file via `POST /api/v1/sold-data/categories` to populate a
+picker before running the calculation. Any category not explicitly marked
+Bullion (including blank/missing categories) is treated as Jewelry.
+
+## Item-Tail classification (ST/MT/LT)
+
+Every sold DKP is ranked **marketplace-wide** (across every seller
+combined, not per seller) by its total `sum_net_item_fcast`, using a
+standard ABC/Pareto cumulative-share cutoff: the top DKPs making up the
+first 30% of total forecasted item volume get **ST**, the next 40%
+(30–70%) get **MT**, and the remaining 30% get **LT**. All DKPCs under a
+badged DKP inherit that DKP's badge. DKPs whose total `sum_net_item_fcast`
+is zero or entirely blank get **no badge at all** (they're excluded from
+the ranking, not defaulted to LT). `tail_badges` is a request field
+(default: all three, i.e. no filtering) — filtering happens *before* the
+ATP calculation, so it changes the Summary percentages too, not just
+which rows are displayed.
+
+## Per-seller missing-items ZIP export
+
+Set `generate_seller_zip=true` on `/calculate` to also build a ZIP
+(downloaded via `GET /api/v1/download/seller-zip/{result_id}`) containing
+one `.xlsx` per Seller ID — that seller's NOT-ATP DKPCs with Weight,
+Category, Bucket, and Tail Badge, sorted by that row's own
+`sum_net_item_fcast` descending (the number itself isn't included in the
+output; rows with a zero/blank value are excluded entirely). Meant for
+emailing each seller their own actionable list. It's opt-in and only
+built when requested, since it's extra work on top of the normal
+Summary/Missing calculation.
 
 ## Performance
 
@@ -111,7 +175,7 @@ from backend.models import ATPMatchType
 class MyNewRule(ATPRule):
     match_type = ATPMatchType.SOME_NEW_TYPE  # add to the enum in models.py
 
-    def evaluate(self, *, seller_key, dkpc, weight, index) -> bool:
+    def evaluate(self, *, seller_key, dkp, dkpc, weight, index) -> bool:
         ...  # your logic, using `index` (the ATPIndex) as needed
 ```
 
@@ -143,6 +207,10 @@ the API layer) needs to change.
 | `ATP_RESULT_CACHE_MAX_ENTRIES` | `50` | Oldest result evicted once exceeded |
 | `ATP_LOG_LEVEL` | `INFO` | Backend log verbosity |
 
+There are no environment variables for the ST/MT/LT cumulative cutoffs
+(30%/70%) — they're fixed constants (`config.TailClassification`), not
+runtime-configurable, per the spec.
+
 The result cache is in-memory and assumes a single backend process. If
 you ever run multiple workers/instances behind a load balancer, swap
 `utils.ResultCache` for a shared store (Redis, a database) behind the
@@ -150,12 +218,29 @@ same `put()`/`get()` interface — nothing else needs to change.
 
 ## Known assumptions
 
-- Seller names are matched case-insensitively and whitespace-trimmed
-  (`seller_key` internally); the seller's own casing from each file is
-  preserved for display in that file's output.
-- `Size_Name` in Live_Data is parsed the same way as `Product Item Name`
-  in Sold_Data (plain numbers and `"<number> گرم"` text are both
-  accepted).
+- `Seller_ID` (`marketplace_seller_id` in Sold_Data) is the join key
+  between the two files — matched after normalization and casefolding
+  (`seller_key` internally). Seller *name* is never used to match rows;
+  it's kept only for display, independently per file.
+- `Seller_ID`/`DKP`/`DKPC` are normalized with `normalize_id`, which
+  strips a trailing `.0` from integer-valued values — this guards against
+  the common Excel gotcha where an ID column gets upcast to float64
+  (e.g. `20911381.0`) just because some other cell in that column is
+  blank.
+- `product_variant_name_fa` in Sold_Data is parsed the same way as
+  `Size_Name` in Live_Data (plain numbers and `"<number> گرم"` text are
+  both accepted).
+- A `category_name_fa` value that's blank or not explicitly marked as
+  Bullion defaults to the Jewelry bucket.
+- A DKP's category bucket (for the DKP-level Summary split) is taken from
+  whichever of its sold DKPCs appears first in the file — the same
+  "first-seen" approximation already used for seller display-name
+  casing. If a single DKP's variants are genuinely split across both
+  buckets in practice, this picks one rather than splitting the DKP
+  itself.
+- Rows with a zero or blank `sum_net_item_fcast` are excluded entirely
+  from Item-Tail ranking (no badge at all, not defaulted to LT) and from
+  the per-seller ZIP export — they're not merely sorted last.
 
 ## Packaging as a Windows .exe
 

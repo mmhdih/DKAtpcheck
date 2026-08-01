@@ -74,11 +74,34 @@ def normalize_text(value: Any) -> str:
 def normalize_key(value: Any) -> str:
     """
     Normalize a raw cell value into a matching KEY: same as normalize_text
-    plus case-folding. Used internally to join Live_Data and Sold_Data on
-    seller name even if casing differs between the two files. Never shown
-    to the user directly.
+    plus case-folding. Never shown to the user directly.
     """
     return normalize_text(value).casefold()
+
+
+_INTEGER_LOOKING_RE = re.compile(r"-?\d+\.0+")
+
+
+def normalize_id(value: Any) -> str:
+    """
+    Normalize a raw identifier cell (Seller_ID, DKP, DKPC) into a clean
+    matching/display string.
+
+    Handles the common Excel gotcha where an ID column gets upcast to
+    float64 because *some* other cell in the column is blank/NaN (e.g.
+    20911381.0 instead of "20911381"): an integer-valued float has its
+    trailing ".0" stripped before str()-ing, and the same stripping is
+    applied if the value arrives as text (e.g. "20911381.0") for the same
+    reason. Everything else is delegated to normalize_text.
+    """
+    if value is None or (isinstance(value, float) and value != value):
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    text = normalize_text(value)
+    if _INTEGER_LOOKING_RE.fullmatch(text):
+        text = text.split(".")[0]
+    return text
 
 
 # --------------------------------------------------------------------------- #
@@ -108,6 +131,7 @@ def timer() -> Iterator[dict[str, float]]:
 class _CacheEntry:
     summary_df: pd.DataFrame
     missing_df: pd.DataFrame
+    seller_zip_bytes: bytes | None = None
     created_at: float = field(default_factory=time.monotonic)
 
 
@@ -128,14 +152,21 @@ class ResultCache:
         self._store: dict[str, _CacheEntry] = {}
         self._lock = threading.Lock()
 
-    def put(self, summary_df: pd.DataFrame, missing_df: pd.DataFrame) -> str:
+    def put(
+        self,
+        summary_df: pd.DataFrame,
+        missing_df: pd.DataFrame,
+        seller_zip_bytes: bytes | None = None,
+    ) -> str:
         result_id = uuid.uuid4().hex
         with self._lock:
             self._evict_expired()
             if len(self._store) >= self._max_entries:
                 oldest_id = min(self._store, key=lambda k: self._store[k].created_at)
                 del self._store[oldest_id]
-            self._store[result_id] = _CacheEntry(summary_df=summary_df, missing_df=missing_df)
+            self._store[result_id] = _CacheEntry(
+                summary_df=summary_df, missing_df=missing_df, seller_zip_bytes=seller_zip_bytes,
+            )
         return result_id
 
     def get(self, result_id: str) -> _CacheEntry | None:

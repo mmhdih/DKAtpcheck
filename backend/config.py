@@ -24,23 +24,29 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class LiveDataColumns:
     """Raw column headers expected in the Live_Data Excel file."""
 
+    SELLER_ID: Final[str] = "Seller_ID"
     SELLER: Final[str] = "Seller_Name"
     DKP: Final[str] = "DKP"
     DKPC: Final[str] = "DKPC"
     SIZE_NAME: Final[str] = "Size_Name"
 
-    REQUIRED: Final[tuple[str, ...]] = (SELLER, DKP, DKPC, SIZE_NAME)
+    REQUIRED: Final[tuple[str, ...]] = (SELLER_ID, SELLER, DKP, DKPC, SIZE_NAME)
 
 
 class SoldDataColumns:
     """Raw column headers expected in the Sold_Data Excel file."""
 
-    SELLER: Final[str] = "Seller Name"
-    DKP: Final[str] = "Product Id"
-    DKPC: Final[str] = "Product Item Id"
-    PRODUCT_ITEM_NAME: Final[str] = "Product Item Name"
+    SELLER_ID: Final[str] = "marketplace_seller_id"
+    SELLER: Final[str] = "marketplace_seller_name"
+    DKP: Final[str] = "product_id"
+    DKPC: Final[str] = "product_variant_id"
+    WEIGHT_SOURCE: Final[str] = "product_variant_name_fa"
+    CATEGORY: Final[str] = "category_name_fa"
+    NET_ITEM_FCAST: Final[str] = "sum_net_item_fcast"
 
-    REQUIRED: Final[tuple[str, ...]] = (SELLER, DKP, DKPC, PRODUCT_ITEM_NAME)
+    REQUIRED: Final[tuple[str, ...]] = (
+        SELLER_ID, SELLER, DKP, DKPC, WEIGHT_SOURCE, CATEGORY, NET_ITEM_FCAST,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -50,12 +56,39 @@ class SoldDataColumns:
 # know which source file a row came from.
 # --------------------------------------------------------------------------- #
 class CanonicalColumns:
+    SELLER_ID: Final[str] = "seller_id"      # normalized identifier; the actual join key source
     SELLER: Final[str] = "seller"            # display name (trimmed, original casing)
-    SELLER_KEY: Final[str] = "seller_key"    # normalized (trimmed + casefolded) join key
+    SELLER_KEY: Final[str] = "seller_key"    # casefolded seller_id; join key used throughout the engine
     DKP: Final[str] = "dkp"
     DKPC: Final[str] = "dkpc"
     WEIGHT: Final[str] = "weight"          # float, NaN if unresolvable
     SOURCE_TEXT: Final[str] = "source_text"  # raw text weight was parsed from (debugging)
+    CATEGORY: Final[str] = "category"        # Sold_Data only; "" if blank
+    NET_ITEM_FCAST: Final[str] = "net_item_fcast"  # Sold_Data only; float, NaN if blank
+    BUCKET: Final[str] = "bucket"            # "Bullion" | "Jewelry"; assigned at request time
+    TAIL_BADGE: Final[str] = "tail_badge"    # "ST" | "MT" | "LT" | NaN; assigned at request time
+
+
+# --------------------------------------------------------------------------- #
+# Category bucket labels (Bullion vs Jewelry split)
+# --------------------------------------------------------------------------- #
+class CategoryBucket:
+    BULLION: Final[str] = "Bullion"
+    JEWELRY: Final[str] = "Jewelry"
+
+
+# --------------------------------------------------------------------------- #
+# Item-Tail (ABC/Pareto) classification, ranked globally by sum_net_item_fcast
+# --------------------------------------------------------------------------- #
+class TailClassification:
+    ST: Final[str] = "ST"
+    MT: Final[str] = "MT"
+    LT: Final[str] = "LT"
+    ALL: Final[tuple[str, ...]] = (ST, MT, LT)
+
+    # Cumulative-percentage cutoffs (inclusive), standard ABC/Pareto split.
+    CUMULATIVE_CUTOFF_ST_PCT: Final[float] = 30.0
+    CUMULATIVE_CUTOFF_MT_PCT: Final[float] = 70.0
 
 
 # --------------------------------------------------------------------------- #

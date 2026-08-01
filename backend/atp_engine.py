@@ -4,8 +4,8 @@ atp_engine.py
 The core ATP computation. Two independent things are computed here:
 
   1. DKPC-level ATP (weight-aware): exact DKPC match first, then — only if
-     no exact match and a sold weight is resolvable — a same-seller weight
-     search within +/- tolerance%.
+     no exact match and a sold weight is resolvable — a same-seller,
+     same-DKP weight search within +/- tolerance%.
   2. DKP-level ATP (weight-INDEPENDENT): true iff the seller has at least
      one live DKPC under that DKP, regardless of weight.
 
@@ -29,6 +29,7 @@ import numpy as np
 import pandas as pd
 
 from .config import CanonicalColumns as C
+from .config import CategoryBucket
 from .models import ATPMatchType
 from .utils import get_logger
 
@@ -47,15 +48,17 @@ class ATPIndex:
     Attributes:
         dkpc_by_seller: seller_key -> set of live DKPCs (exact match, O(1) lookup)
         dkp_by_seller:  seller_key -> set of live DKPs (weight-independent, O(1) lookup)
-        weights_by_seller: seller_key -> sorted np.ndarray of live weights
-            (NaN-free). Used with np.searchsorted for O(log n) "is any
-            weight within [lo, hi]" range queries instead of an O(n) scan
-            per sold row.
+        weights_by_seller_dkp: (seller_key, dkp) -> sorted np.ndarray of live
+            weights for that exact DKP (NaN-free). Scoped to the same DKP,
+            not just the same seller — a sold item's weight is only ever
+            compared against live weights of the SAME product. Used with
+            np.searchsorted for O(log n) "is any weight within [lo, hi]"
+            range queries instead of an O(n) scan per sold row.
     """
 
     dkpc_by_seller: dict[str, frozenset[str]]
     dkp_by_seller: dict[str, frozenset[str]]
-    weights_by_seller: dict[str, np.ndarray]
+    weights_by_seller_dkp: dict[tuple[str, str], np.ndarray]
 
     @classmethod
     def build(cls, live_df: pd.DataFrame) -> "ATPIndex":
@@ -69,25 +72,27 @@ class ATPIndex:
         }
 
         weighted = live_df.dropna(subset=[C.WEIGHT])
-        weights_by_seller = {
-            seller_key: np.sort(group[C.WEIGHT].to_numpy(dtype=float))
-            for seller_key, group in weighted.groupby(C.SELLER_KEY)[[C.WEIGHT]]
+        weights_by_seller_dkp = {
+            key: np.sort(group[C.WEIGHT].to_numpy(dtype=float))
+            for key, group in weighted.groupby([C.SELLER_KEY, C.DKP])[[C.WEIGHT]]
         }
 
         logger.info(
-            "Built ATPIndex for %d sellers (%d with at least one resolvable live weight).",
+            "Built ATPIndex for %d sellers (%d (seller,DKP) pairs with at least one resolvable live weight).",
             len(dkpc_by_seller),
-            len(weights_by_seller),
+            len(weights_by_seller_dkp),
         )
         return cls(
             dkpc_by_seller=dkpc_by_seller,
             dkp_by_seller=dkp_by_seller,
-            weights_by_seller=weights_by_seller,
+            weights_by_seller_dkp=weights_by_seller_dkp,
         )
 
-    def has_weight_within_tolerance(self, seller_key: str, weight: float, tolerance_pct: float) -> bool:
-        """O(log n) check: does this seller have any live weight in [weight*(1-t), weight*(1+t)]?"""
-        arr = self.weights_by_seller.get(seller_key)
+    def has_weight_within_tolerance(
+        self, seller_key: str, dkp: str, weight: float, tolerance_pct: float
+    ) -> bool:
+        """O(log n) check: does this seller's SAME DKP have any live weight in [weight*(1-t), weight*(1+t)]?"""
+        arr = self.weights_by_seller_dkp.get((seller_key, dkp))
         if arr is None or arr.size == 0:
             return False
         low = weight * (1 - tolerance_pct / 100.0)
@@ -103,14 +108,16 @@ class ATPIndex:
 class ATPRule(ABC):
     """
     A single matching rule. `evaluate` returns True if this rule grants
-    ATP status for the given sold (seller_key, dkpc, weight) against the
-    index. ATPEngine runs rules in order and stops at the first True.
+    ATP status for the given sold (seller_key, dkp, dkpc, weight) against
+    the index. ATPEngine runs rules in order and stops at the first True.
     """
 
     match_type: ATPMatchType
 
     @abstractmethod
-    def evaluate(self, *, seller_key: str, dkpc: str, weight: float | None, index: ATPIndex) -> bool: ...
+    def evaluate(
+        self, *, seller_key: str, dkp: str, dkpc: str, weight: float | None, index: ATPIndex
+    ) -> bool: ...
 
 
 class ExactDKPCRule(ATPRule):
@@ -118,16 +125,19 @@ class ExactDKPCRule(ATPRule):
 
     match_type = ATPMatchType.EXACT_DKPC
 
-    def evaluate(self, *, seller_key: str, dkpc: str, weight: float | None, index: ATPIndex) -> bool:
+    def evaluate(self, *, seller_key: str, dkp: str, dkpc: str, weight: float | None, index: ATPIndex) -> bool:
         return dkpc in index.dkpc_by_seller.get(seller_key, frozenset())
 
 
 class WeightToleranceRule(ATPRule):
     """
     Step 2: only applies if the sold weight is resolvable. Any live DKPC of
-    the same seller with weight within +/- tolerance% grants ATP.
-    Sold rows with no resolvable weight never reach this rule with a match
-    (weight=None short-circuits to False, meaning exact-match-only applies).
+    the same seller AND the same DKP with weight within +/- tolerance%
+    grants ATP (scoped to the same product — a live item of a different
+    product must never grant ATP just because its weight happens to be
+    close). Sold rows with no resolvable weight never reach this rule with
+    a match (weight=None short-circuits to False, meaning exact-match-only
+    applies).
     """
 
     match_type = ATPMatchType.WEIGHT_TOLERANCE
@@ -135,10 +145,10 @@ class WeightToleranceRule(ATPRule):
     def __init__(self, tolerance_pct: float) -> None:
         self.tolerance_pct = tolerance_pct
 
-    def evaluate(self, *, seller_key: str, dkpc: str, weight: float | None, index: ATPIndex) -> bool:
+    def evaluate(self, *, seller_key: str, dkp: str, dkpc: str, weight: float | None, index: ATPIndex) -> bool:
         if weight is None or (isinstance(weight, float) and np.isnan(weight)):
             return False
-        return index.has_weight_within_tolerance(seller_key, weight, self.tolerance_pct)
+        return index.has_weight_within_tolerance(seller_key, dkp, weight, self.tolerance_pct)
 
 
 def default_dkpc_rules(tolerance_pct: float) -> list[ATPRule]:
@@ -147,14 +157,34 @@ def default_dkpc_rules(tolerance_pct: float) -> list[ATPRule]:
 
 
 # --------------------------------------------------------------------------- #
+# Category bucket assignment (Bullion vs Jewelry) — a reporting concern, not
+# a matching rule, but applied before compute() so it rides through the
+# existing per-DKPC/per-DKP dedup for free.
+# --------------------------------------------------------------------------- #
+def assign_bucket(sold_df: pd.DataFrame, bullion_categories: set[str]) -> pd.DataFrame:
+    """
+    Returns sold_df with a new `bucket` column: CategoryBucket.BULLION if
+    the row's `category` is one of bullion_categories, else
+    CategoryBucket.JEWELRY (this also covers blank/unmatched categories).
+    """
+    bucket = np.where(
+        sold_df[C.CATEGORY].isin(bullion_categories), CategoryBucket.BULLION, CategoryBucket.JEWELRY
+    )
+    return sold_df.assign(**{C.BUCKET: bucket})
+
+
+# --------------------------------------------------------------------------- #
 # Engine
 # --------------------------------------------------------------------------- #
 @dataclass
 class ATPResult:
-    """Everything downstream modules (summary/missing generators) need."""
+    """Everything downstream modules (summary/missing/seller_export) need."""
 
-    dkpc_results: pd.DataFrame  # columns: seller, seller_key, dkp, dkpc, weight, match_type, is_atp
-    dkp_results: pd.DataFrame  # columns: seller, seller_key, dkp, is_atp
+    # columns: seller_id, seller, seller_key, dkp, dkpc, weight, category,
+    #          bucket, tail_badge, net_item_fcast, match_type, is_atp
+    dkpc_results: pd.DataFrame
+    # columns: seller_id, seller, seller_key, dkp, category, bucket, tail_badge, is_atp
+    dkp_results: pd.DataFrame
 
 
 class ATPEngine:
@@ -166,6 +196,11 @@ class ATPEngine:
     override `_default_rules`). The rest of the compute() pipeline —
     deduplication to unique DKPCs, DKP-level independence from weight, and
     the output shape — does not need to change.
+
+    Precondition: `sold_df` must already carry `bucket` (see assign_bucket)
+    and, if tail-badge filtering/reporting is in use, `tail_badge` — both
+    are request-time concerns computed by the caller (app.py), not by this
+    engine.
     """
 
     def __init__(self, index: ATPIndex, tolerance_pct: float, dkpc_rules: list[ATPRule] | None = None) -> None:
@@ -173,9 +208,9 @@ class ATPEngine:
         self.tolerance_pct = tolerance_pct
         self.dkpc_rules = dkpc_rules or default_dkpc_rules(tolerance_pct)
 
-    def _classify_dkpc(self, seller_key: str, dkpc: str, weight: float | None) -> ATPMatchType:
+    def _classify_dkpc(self, seller_key: str, dkp: str, dkpc: str, weight: float | None) -> ATPMatchType:
         for rule in self.dkpc_rules:
-            if rule.evaluate(seller_key=seller_key, dkpc=dkpc, weight=weight, index=self.index):
+            if rule.evaluate(seller_key=seller_key, dkp=dkp, dkpc=dkpc, weight=weight, index=self.index):
                 return rule.match_type
         return ATPMatchType.NOT_ATP
 
@@ -184,9 +219,9 @@ class ATPEngine:
         unique_dkpc = sold_df.drop_duplicates(subset=[C.SELLER_KEY, C.DKPC]).reset_index(drop=True)
 
         match_types = [
-            self._classify_dkpc(seller_key, dkpc, weight)
-            for seller_key, dkpc, weight in zip(
-                unique_dkpc[C.SELLER_KEY], unique_dkpc[C.DKPC], unique_dkpc[C.WEIGHT]
+            self._classify_dkpc(seller_key, dkp, dkpc, weight)
+            for seller_key, dkp, dkpc, weight in zip(
+                unique_dkpc[C.SELLER_KEY], unique_dkpc[C.DKP], unique_dkpc[C.DKPC], unique_dkpc[C.WEIGHT]
             )
         ]
         unique_dkpc = unique_dkpc.assign(
@@ -201,7 +236,7 @@ class ATPEngine:
                 dkp in self.index.dkp_by_seller.get(seller_key, frozenset())
                 for seller_key, dkp in zip(unique_dkp[C.SELLER_KEY], unique_dkp[C.DKP])
             ]
-        )[[C.SELLER, C.SELLER_KEY, C.DKP, "is_atp"]]
+        )
 
         logger.info(
             "ATP computed: %d unique sold DKPCs (%d ATP), %d unique sold DKPs (%d ATP).",
@@ -211,7 +246,13 @@ class ATPEngine:
             int(unique_dkp["is_atp"].sum()),
         )
 
+        dkpc_cols = [
+            C.SELLER_ID, C.SELLER, C.SELLER_KEY, C.DKP, C.DKPC, C.WEIGHT,
+            C.CATEGORY, C.BUCKET, C.TAIL_BADGE, C.NET_ITEM_FCAST, "match_type", "is_atp",
+        ]
+        dkp_cols = [C.SELLER_ID, C.SELLER, C.SELLER_KEY, C.DKP, C.CATEGORY, C.BUCKET, C.TAIL_BADGE, "is_atp"]
+
         return ATPResult(
-            dkpc_results=unique_dkpc[[C.SELLER, C.SELLER_KEY, C.DKP, C.DKPC, C.WEIGHT, "match_type", "is_atp"]],
-            dkp_results=unique_dkp,
+            dkpc_results=unique_dkpc[dkpc_cols],
+            dkp_results=unique_dkp[dkp_cols],
         )

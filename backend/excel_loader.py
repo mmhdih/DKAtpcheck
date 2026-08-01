@@ -6,6 +6,10 @@ the required columns are present, and normalizes both into a shared
 canonical schema (see config.CanonicalColumns) so the rest of the pipeline
 never has to know which source file a row came from.
 
+Seller_ID (Live_Data) / marketplace_seller_id (Sold_Data) is the join key
+between the two files (seller_key = normalized seller_id, casefolded) —
+seller display name is retained separately, for output only.
+
 Performance notes:
   - Prefers the `calamine` engine (Rust-backed, via python-calamine) for
     reading, falling back to `openpyxl` if calamine is unavailable or
@@ -21,11 +25,10 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from typing import BinaryIO
 
-import numpy as np
 import pandas as pd
 
 from .config import CanonicalColumns, LiveDataColumns, SoldDataColumns, get_settings
-from .utils import get_logger, normalize_key, normalize_text
+from .utils import get_logger, normalize_id, normalize_text
 from .weight_parser import to_numeric_weight
 
 logger = get_logger(__name__)
@@ -77,14 +80,14 @@ def _require_columns(df: pd.DataFrame, required: tuple[str, ...], *, source_name
 def _drop_missing_identifiers(
     df: pd.DataFrame, *, id_columns: list[str], source_name: str, warnings: list[str]
 ) -> pd.DataFrame:
-    """Drop rows missing any of seller/dkp/dkpc — these can never participate in matching."""
+    """Drop rows missing any of seller_id/dkp/dkpc — these can never participate in matching."""
     before = len(df)
     mask = (df[id_columns] != "").all(axis=1)
     cleaned = df.loc[mask].copy()
     dropped = before - len(cleaned)
     if dropped:
         warnings.append(
-            f"{source_name}: dropped {dropped} row(s) missing Seller/DKP/DKPC."
+            f"{source_name}: dropped {dropped} row(s) missing Seller_ID/DKP/DKPC."
         )
     return cleaned
 
@@ -93,7 +96,7 @@ def load_live_data(file: BinaryIO | bytes) -> LoadResult:
     """
     Load and canonicalize the Live_Data Excel file.
 
-    Output columns: seller, seller_key, dkp, dkpc, weight
+    Output columns: seller_id, seller, seller_key, dkp, dkpc, weight
     """
     warnings: list[str] = []
     raw_df = _read_excel_any_engine(file, source_name="Live_Data")
@@ -101,21 +104,22 @@ def load_live_data(file: BinaryIO | bytes) -> LoadResult:
 
     df = pd.DataFrame(
         {
+            CanonicalColumns.SELLER_ID: raw_df[LiveDataColumns.SELLER_ID].map(normalize_id),
             CanonicalColumns.SELLER: raw_df[LiveDataColumns.SELLER].map(normalize_text),
-            CanonicalColumns.DKP: raw_df[LiveDataColumns.DKP].map(normalize_text),
-            CanonicalColumns.DKPC: raw_df[LiveDataColumns.DKPC].map(normalize_text),
+            CanonicalColumns.DKP: raw_df[LiveDataColumns.DKP].map(normalize_id),
+            CanonicalColumns.DKPC: raw_df[LiveDataColumns.DKPC].map(normalize_id),
             LiveDataColumns.SIZE_NAME: raw_df[LiveDataColumns.SIZE_NAME],
         }
     )
 
     df = _drop_missing_identifiers(
         df,
-        id_columns=[CanonicalColumns.SELLER, CanonicalColumns.DKP, CanonicalColumns.DKPC],
+        id_columns=[CanonicalColumns.SELLER_ID, CanonicalColumns.DKP, CanonicalColumns.DKPC],
         source_name="Live_Data",
         warnings=warnings,
     )
 
-    df[CanonicalColumns.SELLER_KEY] = df[CanonicalColumns.SELLER].map(normalize_key)
+    df[CanonicalColumns.SELLER_KEY] = df[CanonicalColumns.SELLER_ID].str.casefold()
     df[CanonicalColumns.WEIGHT] = df[LiveDataColumns.SIZE_NAME].map(to_numeric_weight)
 
     unresolved = int(df[CanonicalColumns.WEIGHT].isna().sum())
@@ -134,7 +138,8 @@ def load_sold_data(file: BinaryIO | bytes) -> LoadResult:
     """
     Load and canonicalize the Sold_Data Excel file.
 
-    Output columns: seller, seller_key, dkp, dkpc, weight
+    Output columns: seller_id, seller, seller_key, dkp, dkpc, weight,
+                    category, net_item_fcast
     """
     warnings: list[str] = []
     raw_df = _read_excel_any_engine(file, source_name="Sold_Data")
@@ -142,27 +147,32 @@ def load_sold_data(file: BinaryIO | bytes) -> LoadResult:
 
     df = pd.DataFrame(
         {
+            CanonicalColumns.SELLER_ID: raw_df[SoldDataColumns.SELLER_ID].map(normalize_id),
             CanonicalColumns.SELLER: raw_df[SoldDataColumns.SELLER].map(normalize_text),
-            CanonicalColumns.DKP: raw_df[SoldDataColumns.DKP].map(normalize_text),
-            CanonicalColumns.DKPC: raw_df[SoldDataColumns.DKPC].map(normalize_text),
-            CanonicalColumns.SOURCE_TEXT: raw_df[SoldDataColumns.PRODUCT_ITEM_NAME],
+            CanonicalColumns.DKP: raw_df[SoldDataColumns.DKP].map(normalize_id),
+            CanonicalColumns.DKPC: raw_df[SoldDataColumns.DKPC].map(normalize_id),
+            CanonicalColumns.SOURCE_TEXT: raw_df[SoldDataColumns.WEIGHT_SOURCE],
+            CanonicalColumns.CATEGORY: raw_df[SoldDataColumns.CATEGORY].map(normalize_text),
+            CanonicalColumns.NET_ITEM_FCAST: pd.to_numeric(
+                raw_df[SoldDataColumns.NET_ITEM_FCAST], errors="coerce"
+            ),
         }
     )
 
     df = _drop_missing_identifiers(
         df,
-        id_columns=[CanonicalColumns.SELLER, CanonicalColumns.DKP, CanonicalColumns.DKPC],
+        id_columns=[CanonicalColumns.SELLER_ID, CanonicalColumns.DKP, CanonicalColumns.DKPC],
         source_name="Sold_Data",
         warnings=warnings,
     )
 
-    df[CanonicalColumns.SELLER_KEY] = df[CanonicalColumns.SELLER].map(normalize_key)
+    df[CanonicalColumns.SELLER_KEY] = df[CanonicalColumns.SELLER_ID].str.casefold()
     df[CanonicalColumns.WEIGHT] = df[CanonicalColumns.SOURCE_TEXT].map(to_numeric_weight)
 
     unresolved = int(df[CanonicalColumns.WEIGHT].isna().sum())
     if unresolved:
         warnings.append(
-            f"Sold_Data: {unresolved} row(s) have no extractable weight in Product Item Name "
+            f"Sold_Data: {unresolved} row(s) have no extractable weight in product_variant_name_fa "
             f"(exact-DKPC matching only will apply to these)."
         )
 
