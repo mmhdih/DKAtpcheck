@@ -1,5 +1,7 @@
 # ATP Analyzer
 
+> نسخه فارسی: [README.fa.md](README.fa.md)
+
 Calculates ATP (Available To Purchase) for marketplace sellers by comparing
 a **Live_Data** export against a **Sold_Data** export.
 
