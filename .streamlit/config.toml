@@ -1,0 +1,8 @@
+[server]
+# Streamlit's own upload cap (independent of the backend's max_upload_size_mb
+# check in backend/config.py) — raised to match, so large Live_Data/Sold_Data
+# files aren't rejected by the frontend before ever reaching the backend.
+maxUploadSize = 500
+
+[browser]
+gatherUsageStats = false

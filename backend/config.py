@@ -126,12 +126,24 @@ class Settings(BaseSettings):
     default_tolerance_pct: float = 10.0
 
     # Upload limits.
-    max_upload_size_mb: int = 100
+    max_upload_size_mb: int = 500
 
     # Excel engines to try, in order. "calamine" (python-calamine, Rust-backed)
     # is dramatically faster than openpyxl on files with hundreds of
     # thousands of rows; openpyxl is the guaranteed-available fallback.
     excel_engine_preference: list[str] = ["calamine", "openpyxl"]
+
+    # Accepted upload file extensions (case-insensitive), in addition to
+    # Excel (.xlsx) — a plain .csv is read via pandas.read_csv instead of
+    # pd.read_excel; everything else about the pipeline is unchanged.
+    csv_extensions: list[str] = [".csv"]
+
+    # Text encodings to try, in order, when reading an uploaded .csv.
+    # utf-8-sig handles both plain UTF-8 and UTF-8-with-BOM (the common
+    # "CSV UTF-8" export option in Excel); cp1256 is the common legacy
+    # Windows codepage for Arabic/Persian text when a file was exported
+    # without explicitly choosing UTF-8.
+    csv_encoding_preference: list[str] = ["utf-8-sig", "cp1256", "utf-8"]
 
     # In-memory result cache (see utils.ResultCache). A single-process
     # deployment is assumed; swap this for a Redis-backed cache here if

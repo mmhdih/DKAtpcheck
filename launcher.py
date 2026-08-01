@@ -30,6 +30,10 @@ multiprocessing.freeze_support()
 os.environ.setdefault("STREAMLIT_BROWSER_GATHER_USAGE_STATS", "false")
 os.environ.setdefault("STREAMLIT_SERVER_HEADLESS", "true")
 os.environ.setdefault("STREAMLIT_GLOBAL_DEVELOPMENT_MODE", "false")
+# Streamlit's own upload cap defaults to 200MB regardless of the backend's
+# own limit (backend/config.py Settings.max_upload_size_mb) — raise it to
+# match so large Live_Data/Sold_Data files aren't rejected client-side.
+os.environ.setdefault("STREAMLIT_SERVER_MAX_UPLOAD_SIZE", "500")
 
 BACKEND_HOST = "127.0.0.1"
 BACKEND_PORT = 8000

@@ -1,10 +1,12 @@
 # ATP Analyzer
 
 Calculates ATP (Available To Purchase) for marketplace sellers by comparing
-a **Live_Data** Excel export against a **Sold_Data** Excel export.
+a **Live_Data** export against a **Sold_Data** export.
 
 - **Backend**: FastAPI + pandas/numpy (Python 3.12+)
 - **Frontend**: Streamlit (thin client, no business logic)
+- Both files can be uploaded as `.xlsx` or `.csv` (dispatched by filename
+  extension), up to 500MB each by default (`ATP_MAX_UPLOAD_SIZE_MB`).
 - Built to comfortably handle ~500,000 Live_Data rows and ~30,000
   Sold_Data rows (see *Performance* below).
 
@@ -136,8 +138,8 @@ which rows are displayed.
 
 Set `generate_seller_zip=true` on `/calculate` to also build a ZIP
 (downloaded via `GET /api/v1/download/seller-zip/{result_id}`) containing
-one `.xlsx` per Seller ID — that seller's NOT-ATP DKPCs with Weight,
-Category, Bucket, and Tail Badge, sorted by that row's own
+one `SellerID-SellerName.xlsx` per seller — that seller's NOT-ATP DKPCs
+with Weight, Category, Bucket, and Tail Badge, sorted by that row's own
 `sum_net_item_fcast` descending (the number itself isn't included in the
 output; rows with a zero/blank value are excluded entirely). Meant for
 emailing each seller their own actionable list. It's opt-in and only
@@ -201,11 +203,19 @@ the API layer) needs to change.
 | `ATP_CORS_ALLOW_ORIGINS` | `["*"]` | CORS origins allowed to call the API |
 | `ATP_TOLERANCE_PRESETS` | `[0,5,10,15,20]` | Quick-select buttons in the UI (not a hard limit) |
 | `ATP_DEFAULT_TOLERANCE_PCT` | `10.0` | Pre-filled tolerance value |
-| `ATP_MAX_UPLOAD_SIZE_MB` | `100` | Rejects larger uploads with HTTP 413 |
+| `ATP_MAX_UPLOAD_SIZE_MB` | `500` | Rejects larger uploads with HTTP 413 |
 | `ATP_EXCEL_ENGINE_PREFERENCE` | `["calamine","openpyxl"]` | Excel read engine order |
+| `ATP_CSV_EXTENSIONS` | `[".csv"]` | Filename extensions read as CSV instead of Excel |
+| `ATP_CSV_ENCODING_PREFERENCE` | `["utf-8-sig","cp1256","utf-8"]` | CSV text encodings to try, in order |
 | `ATP_RESULT_CACHE_TTL_SECONDS` | `1800` | How long a calculated result stays downloadable |
 | `ATP_RESULT_CACHE_MAX_ENTRIES` | `50` | Oldest result evicted once exceeded |
 | `ATP_LOG_LEVEL` | `INFO` | Backend log verbosity |
+
+`ATP_MAX_UPLOAD_SIZE_MB` only governs the FastAPI backend's own check.
+Streamlit enforces its own upload cap independently (default 200MB) —
+this repo's `.streamlit/config.toml` (`server.maxUploadSize`) and
+`launcher.py` (the packaged .exe entry point) both raise it to match, so
+raise both together if you increase the limit further.
 
 There are no environment variables for the ST/MT/LT cumulative cutoffs
 (30%/70%) — they're fixed constants (`config.TailClassification`), not
@@ -241,6 +251,14 @@ same `put()`/`get()` interface — nothing else needs to change.
 - Rows with a zero or blank `sum_net_item_fcast` are excluded entirely
   from Item-Tail ranking (no badge at all, not defaulted to LT) and from
   the per-seller ZIP export — they're not merely sorted last.
+- The frontend's Bullion-labels picker defaults to pre-selecting
+  `شمش طلا`, `پک شمش و پلاک طلا`, `سکه و شمش نقره`, and
+  `سکه پارسیان (گرمی)` whenever they appear in the uploaded Sold_Data's
+  categories (`frontend/streamlit_app.py::DEFAULT_BULLION_CATEGORIES`) —
+  still fully editable per calculation, this is just the starting point.
+- CSV uploads try `utf-8-sig` → `cp1256` → `utf-8` encodings in order and
+  auto-detect the delimiter (Iranian Excel exports mix `,` and `;`
+  depending on regional settings) — see `ATP_CSV_ENCODING_PREFERENCE`.
 
 ## Packaging as a Windows .exe
 

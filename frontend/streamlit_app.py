@@ -83,6 +83,13 @@ st.markdown(
 
 TAIL_BADGE_OPTIONS = ["ST", "MT", "LT"]
 
+DEFAULT_BULLION_CATEGORIES = [
+    "شمش طلا",
+    "پک شمش و پلاک طلا",
+    "سکه و شمش نقره",
+    "سکه پارسیان (گرمی)",
+]
+
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _fetch_backend_config() -> dict:
@@ -124,8 +131,8 @@ col_left, col_right = st.columns(2, gap="large")
 with col_left:
     st.markdown('<div class="atp-card">', unsafe_allow_html=True)
     st.subheader("1. Upload files")
-    live_file = st.file_uploader("Live_Data.xlsx", type=["xlsx"], key="live_file")
-    sold_file = st.file_uploader("Sold_Data.xlsx", type=["xlsx"], key="sold_file")
+    live_file = st.file_uploader("Live_Data.xlsx or .csv", type=["xlsx", "csv"], key="live_file")
+    sold_file = st.file_uploader("Sold_Data.xlsx or .csv", type=["xlsx", "csv"], key="sold_file")
 
     tcol1, tcol2 = st.columns(2)
     try:
@@ -169,9 +176,10 @@ bullion_categories: list[str] = []
 if sold_file is not None:
     try:
         categories = _fetch_categories(sold_file.getvalue(), sold_file.name)
+        default_bullion = [c for c in DEFAULT_BULLION_CATEGORIES if c in categories]
         bullion_categories = st.multiselect(
             "لیبل‌های شمش (Bullion labels) — everything else is treated as Jewelry",
-            options=categories, default=[],
+            options=categories, default=default_bullion,
         )
     except requests.RequestException as exc:
         st.warning(f"Couldn't preview Sold_Data categories yet: {exc}")

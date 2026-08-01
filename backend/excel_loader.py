@@ -1,10 +1,10 @@
 """
 excel_loader.py
 ----------------
-Reads Live_Data and Sold_Data Excel files exactly once each, validates that
-the required columns are present, and normalizes both into a shared
-canonical schema (see config.CanonicalColumns) so the rest of the pipeline
-never has to know which source file a row came from.
+Reads Live_Data and Sold_Data files (.xlsx or .csv) exactly once each,
+validates that the required columns are present, and normalizes both into
+a shared canonical schema (see config.CanonicalColumns) so the rest of
+the pipeline never has to know which source file a row came from.
 
 Seller_ID (Live_Data) / marketplace_seller_id (Sold_Data) is the join key
 between the two files (seller_key = normalized seller_id, casefolded) —
@@ -46,14 +46,50 @@ class LoadResult:
     warnings: list[str] = field(default_factory=list)
 
 
-def _read_excel_any_engine(file: BinaryIO | bytes, *, source_name: str) -> pd.DataFrame:
+def _is_csv_filename(filename: str | None) -> bool:
+    if not filename:
+        return False
+    settings = get_settings()
+    lowered = filename.lower()
+    return any(lowered.endswith(ext) for ext in settings.csv_extensions)
+
+
+def _read_csv_any_encoding(raw: bytes, *, source_name: str) -> pd.DataFrame:
     """
-    Read an Excel file trying each configured engine in order.
-    Accepts either a file-like object or raw bytes.
+    Read a .csv file trying each configured encoding in order, with the
+    delimiter auto-detected (Persian/Iranian Excel exports use ',' or ';'
+    inconsistently depending on regional settings).
     """
-    raw = file.read() if hasattr(file, "read") else file
     settings = get_settings()
 
+    last_error: Exception | None = None
+    for encoding in settings.csv_encoding_preference:
+        try:
+            return pd.read_csv(BytesIO(raw), sep=None, engine="python", encoding=encoding)
+        except Exception as exc:  # noqa: BLE001 - we deliberately try the next encoding
+            last_error = exc
+            logger.warning("Encoding '%s' failed to read %s as CSV: %s", encoding, source_name, exc)
+
+    raise ExcelValidationError(
+        f"Could not read '{source_name}' as CSV with any configured encoding "
+        f"({settings.csv_encoding_preference}). Last error: {last_error}"
+    )
+
+
+def _read_tabular_any_engine(
+    file: BinaryIO | bytes, *, source_name: str, filename: str | None = None
+) -> pd.DataFrame:
+    """
+    Read an uploaded Live_Data/Sold_Data file, dispatching to CSV or Excel
+    parsing based on the filename's extension. Accepts either a file-like
+    object or raw bytes.
+    """
+    raw = file.read() if hasattr(file, "read") else file
+
+    if _is_csv_filename(filename):
+        return _read_csv_any_encoding(raw, source_name=source_name)
+
+    settings = get_settings()
     last_error: Exception | None = None
     for engine in settings.excel_engine_preference:
         try:
@@ -92,14 +128,14 @@ def _drop_missing_identifiers(
     return cleaned
 
 
-def load_live_data(file: BinaryIO | bytes) -> LoadResult:
+def load_live_data(file: BinaryIO | bytes, *, filename: str | None = None) -> LoadResult:
     """
-    Load and canonicalize the Live_Data Excel file.
+    Load and canonicalize the Live_Data file (.xlsx or .csv).
 
     Output columns: seller_id, seller, seller_key, dkp, dkpc, weight
     """
     warnings: list[str] = []
-    raw_df = _read_excel_any_engine(file, source_name="Live_Data")
+    raw_df = _read_tabular_any_engine(file, source_name="Live_Data", filename=filename)
     _require_columns(raw_df, LiveDataColumns.REQUIRED, source_name="Live_Data")
 
     df = pd.DataFrame(
@@ -134,15 +170,15 @@ def load_live_data(file: BinaryIO | bytes) -> LoadResult:
     return LoadResult(df=df, warnings=warnings)
 
 
-def load_sold_data(file: BinaryIO | bytes) -> LoadResult:
+def load_sold_data(file: BinaryIO | bytes, *, filename: str | None = None) -> LoadResult:
     """
-    Load and canonicalize the Sold_Data Excel file.
+    Load and canonicalize the Sold_Data file (.xlsx or .csv).
 
     Output columns: seller_id, seller, seller_key, dkp, dkpc, weight,
                     category, net_item_fcast
     """
     warnings: list[str] = []
-    raw_df = _read_excel_any_engine(file, source_name="Sold_Data")
+    raw_df = _read_tabular_any_engine(file, source_name="Sold_Data", filename=filename)
     _require_columns(raw_df, SoldDataColumns.REQUIRED, source_name="Sold_Data")
 
     df = pd.DataFrame(

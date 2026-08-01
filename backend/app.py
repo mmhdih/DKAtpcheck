@@ -101,11 +101,11 @@ def public_config() -> dict:
     responses={400: {"model": ErrorResponse}, 413: {"model": ErrorResponse}},
 )
 async def sold_data_categories(
-    sold_file: UploadFile = File(..., description="Sold_Data.xlsx"),
+    sold_file: UploadFile = File(..., description="Sold_Data.xlsx or .csv"),
 ) -> CategoryListResponse:
     sold_bytes = await _read_upload_within_limit(sold_file, label="Sold_Data file")
     try:
-        sold_result = load_sold_data(io.BytesIO(sold_bytes))
+        sold_result = load_sold_data(io.BytesIO(sold_bytes), filename=sold_file.filename)
     except ExcelValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     categories = sorted({c for c in sold_result.df[CanonicalColumns.CATEGORY] if c})
@@ -118,8 +118,8 @@ async def sold_data_categories(
     responses={400: {"model": ErrorResponse}, 413: {"model": ErrorResponse}},
 )
 async def calculate(
-    live_file: UploadFile = File(..., description="Live_Data.xlsx"),
-    sold_file: UploadFile = File(..., description="Sold_Data.xlsx"),
+    live_file: UploadFile = File(..., description="Live_Data.xlsx or .csv"),
+    sold_file: UploadFile = File(..., description="Sold_Data.xlsx or .csv"),
     tolerance_pct: float = Form(..., ge=0, description="Weight tolerance percentage"),
     bullion_categories: list[str] = Form(
         default_factory=list, description="category_name_fa values to treat as Bullion"
@@ -148,8 +148,8 @@ async def calculate(
 
     with timer() as t:
         try:
-            live_result = load_live_data(io.BytesIO(live_bytes))
-            sold_result = load_sold_data(io.BytesIO(sold_bytes))
+            live_result = load_live_data(io.BytesIO(live_bytes), filename=live_file.filename)
+            sold_result = load_sold_data(io.BytesIO(sold_bytes), filename=sold_file.filename)
         except ExcelValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -75,7 +75,7 @@ def build_seller_missing_zip(result: ATPResult) -> bytes:
                 }
             )
             xlsx_bytes = dataframe_to_excel_bytes(sheet, sheet_name="ATP_Missing")
-            filename = f"{_safe_filename_part(seller_id)}_{_safe_filename_part(seller_name)}.xlsx"
+            filename = f"{_safe_filename_part(seller_id)}-{_safe_filename_part(seller_name)}.xlsx"
             zf.writestr(filename, xlsx_bytes)
             seller_count += 1
 

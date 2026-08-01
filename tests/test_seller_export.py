@@ -101,6 +101,14 @@ def test_zip_filename_is_sanitized_and_includes_seller_id():
     assert names[0].endswith(".xlsx")
 
 
+def test_zip_filename_uses_seller_id_dash_seller_name_format():
+    rows = [_dkpc_row(**{C.SELLER_ID: "42", C.SELLER: "ACME"})]
+    zip_bytes = build_seller_missing_zip(_result(rows))
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        names = zf.namelist()
+    assert names == ["42-ACME.xlsx"]
+
+
 def test_zip_output_columns_are_exactly_the_expected_set():
     rows = [_dkpc_row()]
     zip_bytes = build_seller_missing_zip(_result(rows))

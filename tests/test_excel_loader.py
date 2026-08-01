@@ -13,6 +13,13 @@ def _to_xlsx_bytes(df: pd.DataFrame) -> BytesIO:
     return buf
 
 
+def _to_csv_bytes(df: pd.DataFrame, *, encoding: str = "utf-8-sig", sep: str = ",") -> BytesIO:
+    buf = BytesIO()
+    df.to_csv(buf, index=False, encoding=encoding, sep=sep)
+    buf.seek(0)
+    return buf
+
+
 def test_load_live_data_happy_path():
     df = pd.DataFrame(
         {
@@ -228,3 +235,66 @@ def test_seller_id_is_the_join_key_not_seller_name():
     )
     sold_result_diff_id = load_sold_data(_to_xlsx_bytes(sold_df_diff_id))
     assert live_result.df["seller_key"].iloc[0] != sold_result_diff_id.df["seller_key"].iloc[0]
+
+
+def test_load_live_data_reads_csv_when_filename_ends_with_csv():
+    df = pd.DataFrame(
+        {
+            "Seller_ID": ["S1"],
+            "Seller_Name": ["ACME"],
+            "DKP": ["D1"],
+            "DKPC": ["D1C1"],
+            "Size_Name": ["0.65 گرم"],
+        }
+    )
+    result = load_live_data(_to_csv_bytes(df), filename="Live_Data.csv")
+    assert result.df["seller_id"].iloc[0] == "S1"
+    assert result.df["weight"].iloc[0] == pytest.approx(0.65)
+
+
+def test_load_sold_data_reads_csv_when_filename_ends_with_csv():
+    df = pd.DataFrame(
+        {
+            "marketplace_seller_id": ["S1"],
+            "marketplace_seller_name": ["ACME"],
+            "product_id": ["D1"],
+            "product_variant_id": ["D1C1"],
+            "product_variant_name_fa": [0.5],
+            "category_name_fa": ["شمش"],
+            "sum_net_item_fcast": [3],
+        }
+    )
+    result = load_sold_data(_to_csv_bytes(df), filename="Sold_Data.CSV")
+    assert result.df["weight"].iloc[0] == pytest.approx(0.5)
+    assert result.df["category"].iloc[0] == "شمش"
+
+
+def test_load_data_csv_delimiter_is_auto_detected():
+    df = pd.DataFrame(
+        {
+            "marketplace_seller_id": ["S1"],
+            "marketplace_seller_name": ["ACME"],
+            "product_id": ["D1"],
+            "product_variant_id": ["D1C1"],
+            "product_variant_name_fa": [0.5],
+            "category_name_fa": ["زیورآلات"],
+            "sum_net_item_fcast": [1],
+        }
+    )
+    result = load_sold_data(_to_csv_bytes(df, sep=";"), filename="Sold_Data.csv")
+    assert result.df["seller_id"].iloc[0] == "S1"
+
+
+def test_xlsx_filename_is_not_treated_as_csv():
+    # Sanity check: without a .csv filename, xlsx bytes load as before.
+    df = pd.DataFrame(
+        {
+            "Seller_ID": ["S1"],
+            "Seller_Name": ["ACME"],
+            "DKP": ["D1"],
+            "DKPC": ["D1C1"],
+            "Size_Name": [1.0],
+        }
+    )
+    result = load_live_data(_to_xlsx_bytes(df), filename="Live_Data.xlsx")
+    assert result.df["seller_id"].iloc[0] == "S1"

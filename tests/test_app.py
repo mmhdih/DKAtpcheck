@@ -16,6 +16,13 @@ def _xlsx_bytes(df: pd.DataFrame) -> bytes:
     return buf.read()
 
 
+def _csv_bytes(df: pd.DataFrame) -> bytes:
+    buf = BytesIO()
+    df.to_csv(buf, index=False, encoding="utf-8-sig")
+    buf.seek(0)
+    return buf.read()
+
+
 def _live_bytes() -> bytes:
     return _xlsx_bytes(
         pd.DataFrame(
@@ -79,6 +86,41 @@ def test_calculate_end_to_end_with_new_schema():
     assert "dkpc_atp_pct_bullion" in row
     assert "dkpc_atp_pct_jewelry" in row
     assert body["meta"]["seller_zip_generated"] is False
+
+
+def test_calculate_accepts_csv_uploads():
+    live_df = pd.DataFrame(
+        {
+            "Seller_ID": ["S1", "S1"],
+            "Seller_Name": ["ACME", "ACME"],
+            "DKP": ["D1", "D2"],
+            "DKPC": ["D1C1", "D2C1"],
+            "Size_Name": [1.0, 2.0],
+        }
+    )
+    sold_df = pd.DataFrame(
+        [
+            {
+                "marketplace_seller_id": "S1",
+                "marketplace_seller_name": "ACME",
+                "product_id": "D1",
+                "product_variant_id": "D1C1",
+                "product_variant_name_fa": 1.0,
+                "category_name_fa": "زیورآلات",
+                "sum_net_item_fcast": 5,
+            }
+        ]
+    )
+    response = client.post(
+        "/api/v1/calculate",
+        files={
+            "live_file": ("Live_Data.csv", _csv_bytes(live_df)),
+            "sold_file": ("Sold_Data.csv", _csv_bytes(sold_df)),
+        },
+        data={"tolerance_pct": 10},
+    )
+    assert response.status_code == 200
+    assert response.json()["summary"][0]["seller_id"] == "S1"
 
 
 def test_sold_data_categories_endpoint_returns_distinct_sorted_values():
