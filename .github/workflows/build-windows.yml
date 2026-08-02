@@ -2,13 +2,20 @@ name: Build Windows executable
 
 # Runs automatically on every push to main/master, on any version tag
 # (e.g. v1.0.0 or V2), and can also be triggered manually from the
-# "Actions" tab in GitHub (the "Run workflow" button) without needing to
-# push anything.
+# "Actions" tab in GitHub (the "Run workflow" button). Manual runs can
+# optionally publish a release too, by filling in "release_tag" — handy
+# when you can't push a tag directly (e.g. restricted git credentials)
+# but still want a Release cut from the current branch.
 on:
   push:
     branches: [main, master]
     tags: ["v*", "V*"]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Optional: publish a Release under this tag (e.g. V2)"
+        required: false
+        type: string
 
 permissions:
   contents: write  # needed to publish a GitHub Release when a tag is pushed
@@ -45,18 +52,20 @@ jobs:
           path: dist/ATP_Analyzer/
           retention-days: 14
 
-      # Only when this run was triggered by a version tag (any push-to-branch
-      # run has a refs/heads/... ref, never refs/tags/...): zip the
-      # portable, no-install-needed app and publish it as a GitHub Release
-      # asset, so anyone can download it directly (no GitHub login needed,
-      # unlike a plain workflow artifact).
+      # Publish a Release either when this run was triggered by a version
+      # tag (any push-to-branch run has a refs/heads/... ref, never
+      # refs/tags/...), OR when manually dispatched with a "release_tag"
+      # input filled in. Zips the portable, no-install-needed app so
+      # anyone can download it directly (no GitHub login needed, unlike a
+      # plain workflow artifact).
       - name: Zip the portable app for the release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         run: Compress-Archive -Path dist/ATP_Analyzer/* -DestinationPath ATP_Analyzer-windows.zip
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
           files: ATP_Analyzer-windows.zip
           generate_release_notes: true
