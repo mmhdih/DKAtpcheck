@@ -12,6 +12,37 @@ a **Live_Data** export against a **Sold_Data** export.
 - Built to comfortably handle ~500,000 Live_Data rows and ~30,000
   Sold_Data rows (see *Performance* below).
 
+## Features
+
+**What it does:** upload a **Live_Data** export (current live inventory)
+and a **Sold_Data** export (sales), and it tells you — per sold item —
+whether it's still **ATP (Available To Purchase)** right now, sliced and
+filtered every way a merchandising team would need.
+
+**What it can compute:**
+- **DKPC-level ATP** (weight-aware): exact match, or a same-seller-**and**-same-DKP
+  weight-tolerance match (configurable %).
+- **DKP-level ATP** (weight-independent): is *any* variant of this product still live.
+- A robust join between the two files via **Seller_ID** (not fuzzy seller-name matching).
+- ATP percentages split into **Bullion vs Jewelry** category buckets
+  (user-configurable, with sensible defaults pre-selected), independently
+  for DKPC and DKP.
+- **Item-Tail classification (ST/MT/LT)** — ABC/Pareto ranking by
+  forecasted sales volume, marketplace-wide, computed **independently
+  within each category bucket**, usable as a filter that affects the ATP
+  percentages themselves.
+- Reads both `.xlsx` and `.csv` uploads, up to 500MB per file.
+
+**What it can output:**
+- **Summary** — one row per seller: 4 ATP percentages (Bullion/Jewelry × DKPC/DKP).
+- **ATP Missing** — the full list of sold DKPCs that are NOT ATP, with category and bucket.
+- **ST/MT/LT per Seller** — DKP counts per seller, per tail badge, split into available/unavailable.
+- **Per-seller ZIP export** (opt-in) — one `SellerID-SellerName.xlsx` per
+  seller listing their unavailable items (weight, category, bucket, tail
+  badge included), ready to email straight to each seller.
+- **Downloadable templates** — example Live_Data/Sold_Data files with the correct headers, no guessing column names.
+- Every table above is also downloadable as its own styled `.xlsx` file.
+
 ## Project structure
 
 ```
