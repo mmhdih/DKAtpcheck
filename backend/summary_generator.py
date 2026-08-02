@@ -98,4 +98,5 @@ def summary_to_excel_bytes(summary_df: pd.DataFrame) -> bytes:
         summary_df,
         sheet_name="Summary",
         percent_columns=_PCT_COLUMNS,
+        color_scale_columns=_PCT_COLUMNS,
     )

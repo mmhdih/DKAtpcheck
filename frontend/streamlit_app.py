@@ -31,7 +31,7 @@ except ImportError:
 BACKEND_URL = os.environ.get("ATP_BACKEND_URL", "http://localhost:8000").rstrip("/")
 API = f"{BACKEND_URL}/api/v1"
 
-st.set_page_config(page_title="ATP Analyzer", page_icon="📦", layout="wide")
+st.set_page_config(page_title="ATP Analyzer By Haj Mehdi", page_icon="📦", layout="wide")
 
 CUSTOM_CSS = """
 <style>
@@ -74,7 +74,7 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 st.markdown(
     """
     <div class="atp-hero">
-        <h1>📦 ATP Analyzer</h1>
+        <h1>📦 ATP Analyzer By Haj Mehdi</h1>
         <p>Upload Live_Data and Sold_Data to find out which sold products are Available To Purchase.</p>
     </div>
     """,
@@ -264,7 +264,9 @@ if result:
         "DKPC ATP % (Jewelry)", "DKP ATP % (Jewelry)",
     ]
 
-    tab_summary, tab_missing, tab_tail = st.tabs(["📊 Summary", "🔻 ATP Missing", "🏷️ ST/MT/LT per Seller"])
+    tab_summary, tab_missing, tab_tail = st.tabs(
+        ["📊 Summary", "🔻 Seller ATP Missing", "🎯 Category ST/MT/LT PER Seller"]
+    )
 
     with tab_summary:
         styled_summary = summary_df.style.format({c: "{:.2f}%" for c in pct_columns})
@@ -332,16 +334,38 @@ if result:
                 "lt_available": "LT Available", "lt_unavailable": "LT Unavailable",
             }
         )
+        tail_count_columns = [
+            "ST Available", "ST Unavailable", "MT Available", "MT Unavailable",
+            "LT Available", "LT Unavailable",
+        ]
         if tail_summary_df.empty:
             st.info("No sold DKP has a resolvable Item-Tail badge (sum_net_item_fcast is zero/blank for all).")
         else:
-            st.caption("DKP counts per seller, per Item-Tail badge, split by ATP status (weight-independent, DKP-level).")
-            st.dataframe(tail_summary_df, use_container_width=True, hide_index=True)
+            st.caption("📋 Overall table — DKP counts per seller, per Item-Tail badge, split by ATP status (weight-independent, DKP-level).")
+            styled_tail_summary = tail_summary_df.style
+            if _MATPLOTLIB_AVAILABLE:
+                styled_tail_summary = styled_tail_summary.background_gradient(
+                    subset=tail_count_columns, cmap="RdYlGn"
+                )
+            else:
+                st.caption("Install matplotlib to enable colored cell shading in this table.")
+            st.dataframe(styled_tail_summary, use_container_width=True, hide_index=True)
             dl_tail_summary = requests.get(f"{API}/download/tail-summary/{result['result_id']}", timeout=60)
             st.download_button(
-                "⬇ Download Tail_Summary.xlsx",
+                "⬇ Download Tail_Summary.xlsx (overall table)",
                 data=dl_tail_summary.content,
                 file_name="Tail_Summary.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+
+            st.divider()
+            st.caption("📦 Item list — every badged DKP across all sellers, in one flat file (not split per seller).")
+            dl_tail_dkp_list = requests.get(f"{API}/download/tail-dkp-list/{result['result_id']}", timeout=60)
+            st.download_button(
+                "⬇ Download Tail_DKP_List.xlsx (item list)",
+                data=dl_tail_dkp_list.content,
+                file_name="Tail_DKP_List.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )

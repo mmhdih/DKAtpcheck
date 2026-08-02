@@ -11,6 +11,7 @@ Endpoints:
     GET  /api/v1/download/summary/{result_id}       Summary.xlsx
     GET  /api/v1/download/missing/{result_id}       ATP_Missing.xlsx
     GET  /api/v1/download/tail-summary/{result_id}  Tail_Summary.xlsx
+    GET  /api/v1/download/tail-dkp-list/{result_id} Tail_DKP_List.xlsx
     GET  /api/v1/download/seller-zip/{result_id}    ATP_Missing_by_Seller.zip (opt-in)
     GET  /api/v1/templates/live-data            Live_Data_Template.xlsx
     GET  /api/v1/templates/sold-data            Sold_Data_Template.xlsx
@@ -45,7 +46,12 @@ from .models import (
 from .seller_export import build_seller_missing_zip
 from .summary_generator import build_summary, summary_to_excel_bytes
 from .tail_classifier import classify_tails
-from .tail_summary_generator import build_tail_summary, tail_summary_to_excel_bytes
+from .tail_summary_generator import (
+    build_tail_dkp_list,
+    build_tail_summary,
+    tail_dkp_list_to_excel_bytes,
+    tail_summary_to_excel_bytes,
+)
 from .templates import build_live_data_template_bytes, build_sold_data_template_bytes
 from .utils import ResultCache, get_logger, timer
 
@@ -181,6 +187,7 @@ async def calculate(
         summary_df = build_summary(atp_result)
         missing_df = build_missing(atp_result)
         tail_summary_df = build_tail_summary(atp_result)
+        tail_dkp_list_df = build_tail_dkp_list(atp_result)
 
         seller_zip_bytes = build_seller_missing_zip(atp_result) if generate_seller_zip else None
 
@@ -188,6 +195,7 @@ async def calculate(
         summary_df=summary_df,
         missing_df=missing_df,
         tail_summary_df=tail_summary_df,
+        tail_dkp_list_df=tail_dkp_list_df,
         seller_zip_bytes=seller_zip_bytes,
     )
 
@@ -299,6 +307,17 @@ def download_tail_summary(result_id: str) -> StreamingResponse:
         io.BytesIO(xlsx_bytes),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=Tail_Summary.xlsx"},
+    )
+
+
+@app.get(f"{settings.api_v1_prefix}/download/tail-dkp-list/{{result_id}}")
+def download_tail_dkp_list(result_id: str) -> StreamingResponse:
+    entry = _get_cache_entry_or_404(result_id)
+    xlsx_bytes = tail_dkp_list_to_excel_bytes(entry.tail_dkp_list_df)
+    return StreamingResponse(
+        io.BytesIO(xlsx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=Tail_DKP_List.xlsx"},
     )
 
 

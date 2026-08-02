@@ -1,428 +1,212 @@
-# ATP Analyzer
+# 📦 تحلیل‌گر ATP <sub>By Haj Mehdi</sub>
 
-> نسخه فارسی: [README.fa.md](README.fa.md)
+> 🇬🇧 English version: [README.en.md](README.en.md)
 
-Calculates ATP (Available To Purchase) for marketplace sellers by comparing
-a **Live_Data** export against a **Sold_Data** export.
+ابزاری برای محاسبه‌ی **ATP (Available To Purchase / قابل‌خرید بودن)** کالاهای فروخته‌شده‌ی فروشنده‌ها در مقایسه با موجودی زنده (لایو) فعلی‌شون. یک فایل **Live_Data** (موجودی زنده) و یک فایل **Sold_Data** (فروش‌ها) آپلود می‌کنید، و اپ به شما می‌گه که هر کالای فروخته‌شده الان هم روی سایت فعال/قابل‌خرید هست یا نه.
 
-- **Backend**: FastAPI + pandas/numpy (Python 3.12+)
-- **Frontend**: Streamlit (thin client, no business logic)
-- Both files can be uploaded as `.xlsx` or `.csv` (dispatched by filename
-  extension), up to 500MB each by default (`ATP_MAX_UPLOAD_SIZE_MB`).
-- Built to comfortably handle ~500,000 Live_Data rows and ~30,000
-  Sold_Data rows (see *Performance* below).
+---
 
-## Features
+## ✨ این اپ چیکار می‌تونه بکنه؟
 
-**What it does:** upload a **Live_Data** export (current live inventory)
-and a **Sold_Data** export (sales), and it tells you — per sold item —
-whether it's still **ATP (Available To Purchase)** right now, sliced and
-filtered every way a merchandising team would need.
+**خلاصه:** یک فایل Live_Data و یک فایل Sold_Data آپلود می‌کنید؛ اپ به ازای هر کالای فروخته‌شده می‌گه که الان هم **ATP (قابل‌خرید)** هست یا نه — و این رو از زوایای مختلفی که یک تیم مرچندایزینگ نیاز داره تفکیک و فیلتر می‌کنه.
 
-**What it can compute:**
-- **DKPC-level ATP** (weight-aware): exact match, or a same-seller-**and**-same-DKP
-  weight-tolerance match (configurable %).
-- **DKP-level ATP** (weight-independent): is *any* variant of this product still live.
-- A robust join between the two files via **Seller_ID** (not fuzzy seller-name matching).
-- ATP percentages split into **Bullion vs Jewelry** category buckets
-  (user-configurable, with sensible defaults pre-selected), independently
-  for DKPC and DKP.
-- **Item-Tail classification (ST/MT/LT)** — ABC/Pareto ranking by
-  forecasted sales volume, marketplace-wide, computed **independently
-  within each category bucket**, usable as a filter that affects the ATP
-  percentages themselves.
-- Reads both `.xlsx` and `.csv` uploads, up to 500MB per file.
+**🧮 چه محاسباتی انجام میده:**
+- **ATP در سطح DKPC** (واریانت کالا، وزن‌آگاه): تطبیق دقیق، یا تطبیق تقریب وزنی که فقط بین همون فروشنده **و** همون DKP چک میشه (درصد تلورانس قابل تنظیم).
+- **ATP در سطح DKP** (کل کالا، مستقل از وزن): آیا *هر* واریانتی از این کالا هنوز لایو هست.
+- اتصال مطمئن بین دو فایل از طریق **Seller_ID** (نه تطبیق تقریبی اسم فروشنده).
+- 🪙 تفکیک درصد ATP به دو بخش **شمش و زیور** (قابل تنظیم توسط کاربر، با یک انتخاب پیش‌فرض منطقی)، جدا برای DKPC و DKP.
+- 🎯 **طبقه‌بندی دم‌دراز (ST/MT/LT)** — رتبه‌بندی ABC/Pareto بر اساس پیش‌بینی حجم فروش، در کل مارکت‌پلیس، ولی **جدا برای شمش و جدا برای زیور** محاسبه میشه؛ قابل استفاده به عنوان فیلتری که خود درصدهای ATP رو هم تحت تأثیر قرار میده.
+- 📄 پشتیبانی از آپلود هم `.xlsx` و هم `.csv`، تا ۵۰۰ مگابایت برای هر فایل.
 
-**What it can output:**
-- **Summary** — one row per seller: 4 ATP percentages (Bullion/Jewelry × DKPC/DKP).
-- **ATP Missing** — the full list of sold DKPCs that are NOT ATP, with category and bucket.
-- **ST/MT/LT per Seller** — DKP counts per seller, per tail badge, split into available/unavailable.
-- **Per-seller ZIP export** (opt-in) — one `SellerID-SellerName.xlsx` per
-  seller listing their unavailable items (weight, category, bucket, tail
-  badge included), ready to email straight to each seller.
-- **Downloadable templates** — example Live_Data/Sold_Data files with the correct headers, no guessing column names.
-- Every table above is also downloadable as its own styled `.xlsx` file.
+**📤 چه خروجی‌هایی میده (۳ تب تو رابط کاربری):**
+- 📊 **Summary:** یک ردیف به ازای هر فروشنده با ۴ درصد ATP (شمش/زیور × DKPC/DKP). رنگی 🔴🟡🟢 هم رو صفحه هم تو فایل اکسل دانلودی.
+- 🔻 **Seller ATP Missing:** لیست کامل DKPCهای فروخته‌شده‌ای که ATP نیستن، همراه با دسته‌بندی و بج شمش/زیور. عمداً بدون رنگ، برای خوانایی راحت‌تر یه لیست خام.
+- 🎯 **Category ST/MT/LT PER Seller:** دو خروجی تو یک تب:
+  - یک **جدول کلی**: تعداد DKPهای موجود/ناموجود هر فروشنده، به تفکیک بج (رنگی)؛
+  - یک **لیست کالا**: تمام DKPهای بج‌دار از *همه‌ی* فروشنده‌ها یکجا تو یک فایل اکسل تخت (رنگی بر اساس بج/وضعیت) — بدون تفکیک به ازای فروشنده، فقط لیست خام.
+- 📦 **خروجی ZIP جدا برای هر فروشنده** (اختیاری): یک اکسل به ازای هر فروشنده با نام `SellerID-SellerName.xlsx` از کالاهای ناموجودش (با وزن، دسته‌بندی، بج شمش/زیور، بج دم‌دراز) — آماده برای ایمیل مستقیم به فروشنده.
+- 📋 **تمپلیت‌های نمونه‌ی قابل دانلود:** فایل Live_Data/Sold_Data نمونه با ستون‌های درست، بدون نیاز به حدس زدن.
+- 🎨 تمام جدول‌های رنگی بالا، تو فایل اکسل دانلودی هم همون رنگ‌بندی رو دارن — نه فقط رو صفحه.
 
-## Project structure
+## ⚙️ نحوه‌ی کارکرد
+
+### ۱. منطق اصلی تطبیق (ATP)
+
+برای هر **DKPC** (شناسه‌ی یکتای واریانت کالا) که فروخته شده، به ترتیب این مراحل چک می‌شه:
+
+1. **تطبیق دقیق (Exact match):** آیا همین DKPC دقیقاً تو Live_Data همون فروشنده وجود داره؟ اگه بله → ATP.
+2. **تطبیق با تقریب وزنی (Weight tolerance):** فقط اگه مرحله‌ی ۱ جواب نداد **و** بشه وزنی از اسم کالا استخراج کرد: آیا **همون فروشنده** و **همون DKP (کالا، نه واریانت)** یک واریانت لایو داره که وزنش تو بازه‌ی `± درصد تلورانس` وزن فروخته‌شده باشه؟ اگه بله → ATP.
+   - **نکته‌ی مهم:** این جست‌وجوی وزنی محدود به همون DKP هست، نه کل کالاهای فروشنده. یعنی اگه فروشنده یک کالای کاملاً متفاوت با وزن مشابه داشته باشه، اون باعث ATP شدن نمیشه — چون منطقاً باید فقط تنوع‌های وزنی *همون محصول* رو در نظر بگیریم، نه کل انبار فروشنده.
+3. اگه اصلاً وزنی از اسم کالا قابل‌استخراج نبود، فقط مرحله‌ی ۱ اعمال میشه (بدون فال‌بک وزنی).
+
+**تلورانس وزنی** یک پارامتر ورودیه (نه عدد ثابت تو کد) — می‌تونید ۰٪ (فقط تطبیق دقیق وزن) تا هر عددی رو امتحان کنید.
+
+**ATP در سطح DKP** (کل کالا، بدون توجه به واریانت وزنی) جدا محاسبه میشه: یک DKP فروخته‌شده ATP هست اگه فروشنده **حداقل یک** واریانت لایو زیر اون DKP داشته باشه — کاملاً مستقل از وزن.
+
+### ۲. کلید اتصال دو فایل (Seller_ID)
+
+اتصال بین فایل Live_Data و Sold_Data بر اساس **Seller_ID** (شناسه‌ی عددی/متنی فروشنده) انجام میشه، **نه اسم فروشنده**. اسم فروشنده فقط برای نمایش نگه داشته میشه. این باعث میشه اگه اسم فروشنده تو دو فایل کمی فرق داشته باشه (فاصله، حروف بزرگ/کوچک، و غیره)، باز هم تطبیق درست انجام بشه — چون معیار واقعی، شناسه‌ست نه متن اسم.
+
+### ۳. تفکیک شمش / زیور (Bullion vs Jewelry)
+
+خروجی Summary، درصد ATP رو به دو بخش مستقل تقسیم می‌کنه: **شمش (Bullion)** و **زیور (Jewelry)**. شما مشخص می‌کنید کدوم دسته‌بندی‌ها (ستون `category_name_fa`) به عنوان شمش حساب بشن؛ بقیه‌ی دسته‌بندی‌ها (و مقادیر خالی) خودکار زیر «زیور» می‌رن. برای هر بخش، هم درصد ATP سطح DKPC و هم سطح DKP جداگانه محاسبه میشه (در کل ۴ عدد درصد به ازای هر فروشنده).
+
+به صورت پیش‌فرض این چهار دسته به عنوان شمش انتخاب شدن (اگه تو فایل شما وجود داشته باشن): **شمش طلا، پک شمش و پلاک طلا، سکه و شمش نقره، سکه پارسیان (گرمی)** — کاملاً قابل تغییر قبل از اجرای محاسبه.
+
+### ۴. بج دم دراز (Item-Tail: ST / MT / LT)
+
+بر اساس ستون `sum_net_item_fcast` (پیش‌بینی مجموع آیتم فروخته‌شده)، همه‌ی DKPها **در کل مارکت‌پلیس** (نه جدا برای هر فروشنده) رتبه‌بندی میشن — ولی این رتبه‌بندی **کاملاً جدا برای شمش و جدا برای زیور** انجام میشه؛ یعنی کالاهای شمش فقط با هم مقایسه میشن و کالاهای زیور فقط با هم، و حجم فروش یک بخش هیچ تأثیری روی کاتوف‌های بخش دیگه نداره. تو هر بخش: کالاهایی که مجموعاً ۳۰٪ اول حجم فروش همون بخش رو تشکیل میدن بج **ST** می‌گیرن، ۳۰٪ تا ۷۰٪ بعدی بج **MT**، و ۳۰٪ آخر بج **LT**. همه‌ی واریانت‌های یک DKP، بج همون DKP رو به ارث می‌برن. کالاهایی که مقدار `sum_net_item_fcast`شون صفر یا خالیه، اصلاً وارد این رتبه‌بندی نمیشن (نه اینکه LT حساب بشن).
+
+می‌تونید انتخاب کنید کدوم بج‌ها (ST/MT/LT) تو محاسبه لحاظ بشن — این فیلتر قبل از محاسبه‌ی ATP اعمال میشه، یعنی روی درصدهای Summary هم اثر می‌ذاره، نه فقط روی نمایش.
+
+### ۵. خروجی جدا برای هر فروشنده (فایل ZIP)
+
+اگه گزینه‌ی «تولید فایل ZIP جدا برای هر فروشنده» رو فعال کنید، یک فایل zip می‌سازه که توش به ازای هر فروشنده یک اکسل با نام `SellerID-SellerName.xlsx` هست — شامل کالاهای غیرفعال (NOT ATP) همون فروشنده، با وزن، دسته‌بندی، بج شمش/زیور و بج دم‌دراز، مرتب‌شده بر اساس مقدار پیش‌بینی فروش (که خودش تو خروجی نمیاد). ردیف‌هایی که این مقدار صفر یا خالیه اصلاً تو خروجی نمیان. این فایل برای ایمیل کردن مستقیم به هر فروشنده طراحی شده و فقط در صورت درخواست ساخته میشه (پردازش اضافه‌ست).
+
+### ۶. تب Category ST/MT/LT PER Seller (دو خروجی، یک تب)
+
+این تب دو خروجی جدا از هم داره:
+
+- **جدول کلی:** به ازای هر فروشنده نشون میده از هر بج (ST/MT/LT)، چند تا DKP **موجود (Available)** و چند تا **ناموجود (Unavailable)** هستن — یعنی ۶ عدد شمارشی: ST موجود، ST ناموجود، MT موجود، MT ناموجود، LT موجود، LT ناموجود. این در سطح DKP (مستقل از وزن) محاسبه میشه، چون خود بج ST/MT/LT یک مفهوم سطح DKP هست. فروشنده‌ای که اصلاً هیچ DKP بج‌دار نداره، تو این جدول نمیاد. رنگی هم هست و قابل دانلود.
+- **لیست کالا:** یک فایل اکسل تخت و یکجا (بدون تفکیک به ازای فروشنده) شامل تمام DKPهای بج‌دار همه‌ی فروشنده‌ها با ستون‌های Seller ID، Seller، DKP، Category، Bucket، Tail Badge، Status (Available/Unavailable) — رنگی بر اساس بج و وضعیت.
+
+### ۷. رنگی بودن خروجی‌ها 🎨
+
+تب Summary و جدول کلی تب Category ST/MT/LT، هم رو صفحه و هم تو فایل اکسل دانلودی، با طیف رنگ 🔴🟡🟢 (قرمز به زرد به سبز) نمایش داده میشن. فایل لیست کالای همون تب هم رنگی هست ولی با رنگ‌بندی ثابت بر اساس مقدار (ST=سبز، MT=زرد، LT=قرمز؛ Available=سبز، Unavailable=قرمز). **تب Seller ATP Missing عمداً بدون رنگ باقی می‌مونه** — چون قراره یه لیست خام و ساده برای خوندن باشه.
+
+### ۸. جمع‌بندی: خروجی نهایی چیه؟
+
+- **Summary:** یک ردیف به ازای هر فروشنده، شامل Seller ID، اسم فروشنده، و ۴ درصد ATP (شمش/زیور × DKPC/DKP).
+- **Seller ATP Missing:** لیست تمام DKPCهای فروخته‌شده‌ای که ATP نیستن، با Seller ID، DKP، DKPC، دسته‌بندی و بج شمش/زیور.
+- **Category ST/MT/LT PER Seller:** جدول کلی تعداد DKPهای موجود/ناموجود هر فروشنده (به تفکیک بج) + لیست تخت تمام DKPهای بج‌دار.
+- **ZIP اختیاری:** یک اکسل جدا به ازای هر فروشنده از همون لیست Missing، با جزئیات بیشتر.
+
+---
+
+## 🗂️ ساختار پروژه
 
 ```
 atp_analyzer/
 ├── backend/
-│   ├── app.py                 FastAPI routes
-│   ├── config.py              column names, defaults, runtime settings
-│   ├── models.py               Pydantic request/response schemas
-│   ├── utils.py                logging, normalization, result cache, Excel export
-│   ├── weight_parser.py        extracts weight from "... | 0.65 گرم |"
-│   ├── excel_loader.py          reads & validates both Excel files
-│   ├── atp_engine.py           the ATP rule pipeline (the core)
-│   ├── tail_classifier.py      ST/MT/LT Item-Tail classification (ABC/Pareto)
-│   ├── summary_generator.py    builds the Summary table
-│   ├── missing_generator.py    builds the ATP_Missing table
-│   ├── tail_summary_generator.py builds the Tail Summary table (ST/MT/LT x ATP status)
-│   ├── seller_export.py        per-seller NOT-ATP ZIP export
-│   └── templates.py            downloadable example Live_Data/Sold_Data templates
+│   ├── app.py                 مسیرهای FastAPI
+│   ├── config.py              نام ستون‌ها، مقادیر پیش‌فرض، تنظیمات
+│   ├── models.py               مدل‌های Pydantic برای درخواست/پاسخ
+│   ├── utils.py                لاگ، نرمال‌سازی، کش نتایج، خروجی اکسل رنگی
+│   ├── weight_parser.py        استخراج وزن از متن مثل "... | 0.65 گرم |"
+│   ├── excel_loader.py          خواندن و اعتبارسنجی فایل‌های ورودی (xlsx/csv)
+│   ├── atp_engine.py           هسته‌ی محاسبه‌ی ATP
+│   ├── tail_classifier.py      طبقه‌بندی ST/MT/LT (جدا برای شمش و زیور)
+│   ├── summary_generator.py    ساخت جدول Summary
+│   ├── missing_generator.py    ساخت جدول Seller ATP Missing
+│   ├── tail_summary_generator.py ساخت جدول کلی و لیست کالای Category ST/MT/LT
+│   ├── seller_export.py        خروجی ZIP جدا برای هر فروشنده
+│   └── templates.py            تمپلیت‌های نمونه‌ی قابل دانلود
 ├── frontend/
-│   └── streamlit_app.py        upload UI, filters, results, downloads
+│   └── streamlit_app.py        رابط کاربری: آپلود، فیلترها، نتایج، دانلود
 ├── tests/
 ├── conftest.py
 └── requirements.txt
 ```
 
-## Setup
+## 📥 نصب
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate          # ویندوز: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Running
+## ▶️ اجرا
 
-Start the backend (from the project root):
+بک‌اند رو اجرا کنید (از ریشه‌ی پروژه):
 
 ```bash
 uvicorn backend.app:app --reload --port 8000
 ```
 
-In a second terminal, start the frontend:
+تو یک ترمینال دیگه، فرانت‌اند رو اجرا کنید:
 
 ```bash
 streamlit run frontend/streamlit_app.py
 ```
 
-Open the URL Streamlit prints (usually `http://localhost:8501`). If the
-backend runs somewhere other than `localhost:8000`, set:
+آدرسی که Streamlit چاپ می‌کنه رو باز کنید (معمولاً `http://localhost:8501`). اگه بک‌اند جای دیگه‌ای اجرا میشه:
 
 ```bash
 export ATP_BACKEND_URL=http://your-backend-host:8000
 ```
 
-## Running the tests
+## 🧪 اجرای تست‌ها
 
 ```bash
 python -m pytest tests/ -v
 ```
 
-## Column mapping
+---
 
-`Seller_ID` / `marketplace_seller_id` is the **join key** between the two
-files (matched after normalization/casefolding) — seller *name* is kept
-purely for display and is never used to match rows across files.
+## 🔗 نگاشت ستون‌ها
 
-| Live_Data column | Sold_Data column | Canonical field | Notes |
-|---|---|---|---|
-| `Seller_ID` | `marketplace_seller_id` | `seller_id` | join key |
-| `Seller_Name` | `marketplace_seller_name` | `seller` | display only |
-| `DKP` | `product_id` | `dkp` | |
-| `DKPC` | `product_variant_id` | `dkpc` | |
-| `Size_Name` | `product_variant_name_fa` | `weight` | parsed via the same numeric/"`<n> گرم`" logic on both sides |
-| — | `category_name_fa` | `category` | Sold_Data only; drives the Bullion/Jewelry bucket |
-| — | `sum_net_item_fcast` | `net_item_fcast` | Sold_Data only; drives the ST/MT/LT tail badge |
-
-Both uploaded files' required columns are validated on upload; download
-example templates straight from the app (`⬇ Live_Data template` /
-`⬇ Sold_Data template` buttons, or `GET /api/v1/templates/live-data` /
-`GET /api/v1/templates/sold-data`) so column names never have to be
-guessed.
-
-## How matching works
-
-For every **unique** sold DKPC (repeat sales of the same DKPC count once):
-
-1. **Exact match** — if that DKPC exists live under the same seller → ATP.
-2. **Weight tolerance** — only if step 1 failed *and* a weight could be
-   parsed from `product_variant_name_fa`: ATP if any live DKPC of the
-   same seller **and the same DKP** has a weight within `± tolerance%` of
-   the sold weight. The tolerance search is scoped to the same product —
-   a live item of a *different* DKP never grants ATP just because its
-   weight happens to be close.
-3. If no weight could be parsed, only step 1 applies (no fallback).
-
-**DKP-level ATP** is computed independently and is weight-agnostic: a sold
-DKP is ATP if the seller has *any* live DKPC under that DKP.
-
-Tolerance is a request parameter, not hardcoded — pass `0` for exact-only
-matching, or any value the seller wants to try.
-
-## Category buckets (Bullion vs Jewelry)
-
-The Summary table splits DKPC/DKP ATP% into two independently-computed
-buckets: **Bullion** (شمش) and **Jewelry** (زیور). Which `category_name_fa`
-values count as Bullion is chosen per calculation (`bullion_categories`
-request field) — fetch the distinct categories found in an uploaded
-Sold_Data file via `POST /api/v1/sold-data/categories` to populate a
-picker before running the calculation. Any category not explicitly marked
-Bullion (including blank/missing categories) is treated as Jewelry.
-
-## Item-Tail classification (ST/MT/LT)
-
-Every sold DKP is ranked **marketplace-wide** (across every seller
-combined, not per seller) by its total `sum_net_item_fcast` — but
-**separately within each category bucket**: Bullion DKPs are ranked only
-against other Bullion DKPs, and Jewelry DKPs only against other Jewelry
-DKPs, so one bucket's volume never affects the other bucket's cutoffs.
-Within each bucket, a standard ABC/Pareto cumulative-share cutoff applies:
-the top DKPs making up the first 30% of that bucket's forecasted item
-volume get **ST**, the next 40% (30–70%) get **MT**, and the remaining
-30% get **LT**. All DKPCs under a badged DKP inherit that DKP's badge.
-DKPs whose total `sum_net_item_fcast` is zero or entirely blank get **no
-badge at all** (they're excluded from the ranking, not defaulted to LT).
-`tail_badges` is a request field (default: all three, i.e. no filtering)
-— filtering happens *before* the ATP calculation, so it changes the
-Summary percentages too, not just
-which rows are displayed.
-
-## Per-seller missing-items ZIP export
-
-Set `generate_seller_zip=true` on `/calculate` to also build a ZIP
-(downloaded via `GET /api/v1/download/seller-zip/{result_id}`) containing
-one `SellerID-SellerName.xlsx` per seller — that seller's NOT-ATP DKPCs
-with Weight, Category, Bucket, and Tail Badge, sorted by that row's own
-`sum_net_item_fcast` descending (the number itself isn't included in the
-output; rows with a zero/blank value are excluded entirely). Meant for
-emailing each seller their own actionable list. It's opt-in and only
-built when requested, since it's extra work on top of the normal
-Summary/Missing calculation.
-
-## Tail Summary (ST/MT/LT per seller, by ATP status)
-
-A third UI tab / `tail_summary` response field / `GET
-/api/v1/download/tail-summary/{result_id}` export shows, per seller, how
-many of their sold DKPs in each Item-Tail bucket are currently ATP
-(available) vs NOT ATP (unavailable) — e.g. `ST Available`, `ST
-Unavailable`, `MT Available`, `MT Unavailable`, `LT Available`, `LT
-Unavailable`. DKP-level (weight-independent) counts, since the badge
-itself is a DKP-level concept. Sellers with no badged DKPs at all are
-omitted.
-
-## Performance
-
-The two datasets are read once each and turned into per-seller lookup
-structures — no nested loop over Live_Data rows:
-
-- `dkpc_by_seller` / `dkp_by_seller`: `dict[str, set]` → O(1) exact-match checks.
-- `weights_by_seller`: a **sorted** NumPy array per seller. A tolerance
-  check is a binary search (`np.searchsorted`) for "is any live weight in
-  `[lo, hi]`", i.e. O(log n) instead of comparing against every live row.
-
-On a synthetic 500,000-row Live_Data / 30,000-row Sold_Data / 1,000-seller
-dataset, the full pipeline (Excel read → index build → ATP compute →
-report generation → Excel export) completes in well under 15 seconds on a
-single core, with the actual matching step taking a fraction of a second.
-
-Excel reading prefers the Rust-backed `calamine` engine and falls back to
-`openpyxl` automatically if `calamine` is unavailable or fails to parse a
-given file — no code changes needed either way.
-
-## Adding a new ATP rule
-
-DKPC-level matching is an ordered rule pipeline (`atp_engine.ATPRule`).
-To add a rule:
-
-```python
-from backend.atp_engine import ATPRule
-from backend.models import ATPMatchType
-
-class MyNewRule(ATPRule):
-    match_type = ATPMatchType.SOME_NEW_TYPE  # add to the enum in models.py
-
-    def evaluate(self, *, seller_key, dkp, dkpc, weight, index) -> bool:
-        ...  # your logic, using `index` (the ATPIndex) as needed
-```
-
-Then pass it in when building the engine:
-
-```python
-from backend.atp_engine import ATPEngine, default_dkpc_rules
-
-engine = ATPEngine(
-    index=index,
-    tolerance_pct=tolerance_pct,
-    dkpc_rules=[*default_dkpc_rules(tolerance_pct), MyNewRule()],
-)
-```
-
-Nothing else in the pipeline (deduplication, summary/missing generation,
-the API layer) needs to change.
-
-## Configuration reference (environment variables, prefix `ATP_`)
-
-| Variable | Default | Purpose |
+| ستون Live_Data | ستون Sold_Data | نقش |
 |---|---|---|
-| `ATP_CORS_ALLOW_ORIGINS` | `["*"]` | CORS origins allowed to call the API |
-| `ATP_TOLERANCE_PRESETS` | `[0,5,10,15,20]` | Quick-select buttons in the UI (not a hard limit) |
-| `ATP_DEFAULT_TOLERANCE_PCT` | `10.0` | Pre-filled tolerance value |
-| `ATP_MAX_UPLOAD_SIZE_MB` | `500` | Rejects larger uploads with HTTP 413 |
-| `ATP_EXCEL_ENGINE_PREFERENCE` | `["calamine","openpyxl"]` | Excel read engine order |
-| `ATP_CSV_EXTENSIONS` | `[".csv"]` | Filename extensions read as CSV instead of Excel |
-| `ATP_CSV_ENCODING_PREFERENCE` | `["utf-8-sig","cp1256","utf-8"]` | CSV text encodings to try, in order |
-| `ATP_RESULT_CACHE_TTL_SECONDS` | `1800` | How long a calculated result stays downloadable |
-| `ATP_RESULT_CACHE_MAX_ENTRIES` | `50` | Oldest result evicted once exceeded |
-| `ATP_LOG_LEVEL` | `INFO` | Backend log verbosity |
+| `Seller_ID` | `marketplace_seller_id` | **کلید اتصال دو فایل** |
+| `Seller_Name` | `marketplace_seller_name` | فقط نمایش |
+| `DKP` | `product_id` | شناسه‌ی کالا |
+| `DKPC` | `product_variant_id` | شناسه‌ی واریانت کالا |
+| `Size_Name` | `product_variant_name_fa` | وزن (هر دو با یک منطق پارس میشن) |
+| — | `category_name_fa` | فقط Sold_Data؛ پایه‌ی تفکیک شمش/زیور |
+| — | `sum_net_item_fcast` | فقط Sold_Data؛ پایه‌ی بج ST/MT/LT |
 
-`ATP_MAX_UPLOAD_SIZE_MB` only governs the FastAPI backend's own check.
-Streamlit enforces its own upload cap independently (default 200MB) —
-this repo's `.streamlit/config.toml` (`server.maxUploadSize`) and
-`launcher.py` (the packaged .exe entry point) both raise it to match, so
-raise both together if you increase the limit further.
+ستون‌های لازم هر دو فایل موقع آپلود اعتبارسنجی میشن. تمپلیت نمونه رو مستقیم از تو اپ دانلود کنید (دکمه‌های «Live_Data template» / «Sold_Data template») تا نیازی به حدس زدن اسم ستون‌ها نباشه.
 
-There are no environment variables for the ST/MT/LT cumulative cutoffs
-(30%/70%) — they're fixed constants (`config.TailClassification`), not
-runtime-configurable, per the spec.
+## 📄 فرمت و حجم فایل‌های ورودی
 
-The result cache is in-memory and assumes a single backend process. If
-you ever run multiple workers/instances behind a load balancer, swap
-`utils.ResultCache` for a shared store (Redis, a database) behind the
-same `put()`/`get()` interface — nothing else needs to change.
+- هم `.xlsx` و هم `.csv` پشتیبانی میشه (بر اساس پسوند فایل تشخیص داده میشه).
+- فایل‌های CSV با چند انکودینگ (`utf-8-sig`، `cp1256`، `utf-8`) و تشخیص خودکار جداکننده (کاما یا سمی‌کولن) خونده میشن — مناسب اکسپورت‌های فارسی/ایرانی.
+- سقف حجم آپلود پیش‌فرض **۵۰۰ مگابایت** برای هر فایل (`ATP_MAX_UPLOAD_SIZE_MB`).
 
-## Known assumptions
+## 🎛️ فیلترها در رابط کاربری
 
-- `Seller_ID` (`marketplace_seller_id` in Sold_Data) is the join key
-  between the two files — matched after normalization and casefolding
-  (`seller_key` internally). Seller *name* is never used to match rows;
-  it's kept only for display, independently per file.
-- `Seller_ID`/`DKP`/`DKPC` are normalized with `normalize_id`, which
-  strips a trailing `.0` from integer-valued values — this guards against
-  the common Excel gotcha where an ID column gets upcast to float64
-  (e.g. `20911381.0`) just because some other cell in that column is
-  blank.
-- `product_variant_name_fa` in Sold_Data is parsed the same way as
-  `Size_Name` in Live_Data (plain numbers and `"<number> گرم"` text are
-  both accepted).
-- A `category_name_fa` value that's blank or not explicitly marked as
-  Bullion defaults to the Jewelry bucket.
-- A DKP's category bucket (for the DKP-level Summary split) is taken from
-  whichever of its sold DKPCs appears first in the file — the same
-  "first-seen" approximation already used for seller display-name
-  casing. If a single DKP's variants are genuinely split across both
-  buckets in practice, this picks one rather than splitting the DKP
-  itself.
-- Rows with a zero or blank `sum_net_item_fcast` are excluded entirely
-  from Item-Tail ranking (no badge at all, not defaulted to LT) and from
-  the per-seller ZIP export — they're not merely sorted last.
-- The frontend's Bullion-labels picker defaults to pre-selecting
-  `شمش طلا`, `پک شمش و پلاک طلا`, `سکه و شمش نقره`, and
-  `سکه پارسیان (گرمی)` whenever they appear in the uploaded Sold_Data's
-  categories (`frontend/streamlit_app.py::DEFAULT_BULLION_CATEGORIES`) —
-  still fully editable per calculation, this is just the starting point.
-- CSV uploads try `utf-8-sig` → `cp1256` → `utf-8` encodings in order and
-  auto-detect the delimiter (Iranian Excel exports mix `,` and `;`
-  depending on regional settings) — see `ATP_CSV_ENCODING_PREFERENCE`.
+1. **تلورانس وزنی** — درصد مجاز اختلاف وزن برای تطبیق تقریبی.
+2. **لیبل‌های شمش** — انتخاب اینکه کدوم `category_name_fa` شمش حساب بشه (بقیه زیور)؛ چهار مورد رایج به‌صورت پیش‌فرض تیک‌خورده.
+3. **بج‌های دم‌دراز (ST/MT/LT)** — فیلتر اینکه کدوم بج‌ها تو محاسبه لحاظ بشن.
+4. **تولید فایل ZIP جدا برای هر فروشنده** — چک‌باکس اختیاری (فقط در صورت تیک خوردن پردازش میشه).
 
-## Packaging as a Windows .exe
+---
 
-There are two ways to get `ATP_Analyzer.exe`: build it locally on a
-Windows machine, or let GitHub build it for you in the cloud (useful if
-your machine is company-managed and locked down — no admin rights,
-registry edits, or local Python installation needed).
+## 🔧 پیکربندی (متغیرهای محیطی، پیشوند `ATP_`)
 
-### Option A — Let GitHub build it for you (no local build, no admin rights)
+| متغیر | پیش‌فرض | کاربرد |
+|---|---|---|
+| `ATP_CORS_ALLOW_ORIGINS` | `["*"]` | مبداهای مجاز CORS |
+| `ATP_TOLERANCE_PRESETS` | `[0,5,10,15,20]` | دکمه‌های انتخاب سریع تلورانس |
+| `ATP_DEFAULT_TOLERANCE_PCT` | `10.0` | مقدار پیش‌فرض تلورانس |
+| `ATP_MAX_UPLOAD_SIZE_MB` | `500` | سقف حجم آپلود (خطای 413 در صورت عبور) |
+| `ATP_EXCEL_ENGINE_PREFERENCE` | `["calamine","openpyxl"]` | ترتیب موتور خواندن اکسل |
+| `ATP_CSV_EXTENSIONS` | `[".csv"]` | پسوندهایی که به عنوان CSV خونده میشن |
+| `ATP_CSV_ENCODING_PREFERENCE` | `["utf-8-sig","cp1256","utf-8"]` | ترتیب انکودینگ‌های CSV |
+| `ATP_RESULT_CACHE_TTL_SECONDS` | `1800` | مدت نگه‌داری نتیجه برای دانلود |
+| `ATP_RESULT_CACHE_MAX_ENTRIES` | `50` | حداکثر تعداد نتیجه‌ی ذخیره‌شده هم‌زمان |
+| `ATP_LOG_LEVEL` | `INFO` | سطح جزئیات لاگ بک‌اند |
 
-A ready-made workflow (`.github/workflows/build-windows.yml`) is already
-included. It spins up a clean, disposable Windows machine on GitHub's
-servers, builds the app there with a normal Python installation (not the
-Microsoft Store version, so none of its long-path/permission quirks
-apply), and hands you a downloadable .exe. None of this touches your own
-computer.
+نکته: `ATP_MAX_UPLOAD_SIZE_MB` فقط سقف خود بک‌اند رو تنظیم می‌کنه. خود Streamlit هم یک سقف مستقل (پیش‌فرض ۲۰۰ مگابایت) داره که با فایل `.streamlit/config.toml` و در نسخه‌ی exe با `launcher.py` هماهنگ با همین مقدار تنظیم شده.
 
-1. Create a free account at [github.com](https://github.com) if you
-   don't have one.
-2. Click **+ → New repository** (top right). Give it any name (e.g.
-   `atp-analyzer`), keep it Public or Private, then **Create repository**.
-3. On the new repo's page, click **"uploading an existing file"** (or
-   **Add file → Upload files**). Drag in the *entire contents* of this
-   project folder (everything inside the zip you were given — `backend/`,
-   `frontend/`, `.github/`, `requirements.txt`, `build_windows.spec`,
-   etc.). This works entirely from the browser — no `git` command needed.
-4. Commit the upload ("Commit changes").
-5. Go to the **Actions** tab of your new repo. A run named
-   *"Build Windows executable"* should already be starting (it triggers
-   automatically on upload). If it isn't there, click the workflow on the
-   left, then **"Run workflow"**.
-6. Wait for the green checkmark (a few minutes).
-7. Click into the finished run, scroll to **Artifacts** at the bottom,
-   and download **ATP_Analyzer-windows** — this is your built app as a
-   .zip.
-8. Extract it anywhere on your Windows machine and double-click
-   `ATP_Analyzer.exe`.
+کاتوف‌های ۳۰٪/۷۰٪ برای بج ST/MT/LT عدد ثابت تو کد هستن و از طریق متغیر محیطی قابل تغییر نیستن.
 
-If your company network blocks github.com, try this from a personal
-device/network instead — you only need GitHub to *build* it; the
-resulting .exe runs on any Windows machine afterwards, including the
-locked-down one.
+## 📝 فرضیات شناخته‌شده
 
-### Option B — Build locally on Windows
+- کلید اتصال بین دو فایل `Seller_ID` هست، نه اسم فروشنده.
+- شناسه‌های `Seller_ID`/`DKP`/`DKPC` طوری نرمال میشن که مشکل رایج اکسل (تبدیل شدن یک ستون شناسه به عدد اعشاری مثل `20911381.0` به خاطر یک سلول خالی دیگه تو همون ستون) خودکار رفع بشه.
+- دسته‌بندی خالی یا دسته‌بندی‌ای که به عنوان شمش انتخاب نشده، خودکار «زیور» حساب میشه.
+- بج شمش/زیور در سطح DKP، از اولین واریانت دیده‌شده‌ی همون DKP تو فایل گرفته میشه (اگه یک کالا واقعاً بین دو دسته تقسیم شده باشه، این یک تقریبه).
+- ردیف‌هایی با `sum_net_item_fcast` صفر یا خالی، هم از رتبه‌بندی دم‌دراز و هم از خروجی‌های ZIP/لیست کالا کاملاً حذف میشن.
+- نام فایل‌های اکسل خروجی به فرمت `SellerID-SellerName.xlsx` هستن و اسم فارسی فروشنده‌ها بدون مشکل توشون حفظ میشه.
 
-`launcher.py` is a single entry point that starts the FastAPI backend and
-the Streamlit frontend as one process and opens your browser — this is
-what gets frozen into the .exe.
+---
 
-**You must build ON Windows** (PyInstaller does not cross-compile — a
-Linux or Mac machine can't produce a Windows .exe).
+## 🌐 نکات فنی بیشتر (عملکرد، افزودن قانون تطبیق جدید، پکیج‌سازی ویندوز)
 
-Copy this project folder onto the Windows machine, then from the project
-root run:
+این مستند فارسی روی «نحوه‌ی کارکرد» و راه‌اندازی اولیه تمرکز داره. برای جزئیات فنی بیشتر — از جمله چگونگی عملکرد بالا با فایل‌های ۵۰۰ هزار ردیفی، نحوه‌ی اضافه کردن یک قانون تطبیق جدید به موتور ATP، و راهنمای کامل ساخت فایل exe ویندوز (هم روش بدون نیاز به نصب چیزی روی سیستم از طریق GitHub Actions، هم ساخت محلی) — به [نسخه‌ی انگلیسی (README.en.md)](README.en.md) مراجعه کنید.
 
-```bat
-build_windows.bat
-```
+## 💻 دانلود نسخه‌ی آماده (پرتابل، بدون نیاز به نصب)
 
-That script creates a virtualenv, installs `requirements.txt` +
-`pyinstaller`, and runs `pyinstaller build_windows.spec`. The result is a
-folder:
-
-```
-dist\ATP_Analyzer\
-    ATP_Analyzer.exe
-    ... (dependencies)
-```
-
-Double-click `ATP_Analyzer.exe` — it starts both servers in the background
-and opens your default browser to the app. **Distribute the whole
-`dist\ATP_Analyzer` folder**, not just the .exe file; the process needs
-the files sitting next to it.
-
-Manual equivalent, if you'd rather not use the .bat file:
-
-```bat
-pip install -r requirements.txt
-pip install pyinstaller
-pyinstaller --noconfirm build_windows.spec
-```
-
-### Why a .spec file instead of plain `pyinstaller launcher.py`
-
-Streamlit ships its compiled frontend (HTML/JS/CSS) as package data, not
-Python source — a plain PyInstaller run won't find it, and the app will
-fail immediately with missing-file errors. `build_windows.spec` uses
-`collect_all(...)` for streamlit, pandas, fastapi, uvicorn, and the other
-libraries with the same issue, so all their non-`.py` assets are bundled
-automatically.
-
-### Troubleshooting
-
-- **`OSError: [Errno 2] No such file or directory` mentioning a path like
-  `AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\...`**:
-  this means Python was installed from the Microsoft Store, whose deeply
-  nested install path combined with Streamlit's own nested package files
-  exceeds Windows' 260-character path limit — this is a known, common
-  issue (it happens with several other large packages too, not just
-  Streamlit) and isn't specific to this project. On a restricted/managed
-  machine where you can't install a different Python or edit the
-  registry, use **Option A above** (GitHub builds it for you) instead.
-- **Antivirus flags the .exe / SmartScreen warning**: this is normal and
-  expected for unsigned PyInstaller executables; it's not a bug in the
-  app. Code-sign the binary if you're distributing it publicly.
-- **"Could not find module" at runtime**: add the missing package's name
-  to `COLLECT_ALL_PACKAGES` in `build_windows.spec` and rebuild.
-- **Large output folder / slow first launch**: onedir (used here) is much
-  faster to start than `--onefile`, at the cost of a bigger folder rather
-  than a single file. Stick with onedir unless you specifically need a
-  single-file artifact.
-- **Want to hide the console window**: set `console=False` in
-  `build_windows.spec` once you've confirmed everything works with it
-  visible — the console is invaluable for reading the first few errors.
-- **Want a proper desktop window instead of a browser tab**: swap
-  `webbrowser.open(...)` in `launcher.py` for a
-  [`pywebview`](https://pywebview.flowrl.com/) window pointed at the same
-  URL. Not included by default to keep the packaging surface smaller.
+آخرین نسخه‌ی بسته‌بندی‌شده‌ی ویندوز (فقط اکسترکت کن و اجرا کن، بدون نیاز به Python یا نصب چیزی) رو از بخش **[Releases](../../releases)** همین ریپازیتوری دانلود کنید.

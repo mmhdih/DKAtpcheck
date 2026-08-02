@@ -1,16 +1,24 @@
 """
 tail_summary_generator.py
 ---------------------------
-Builds the Tail Summary table: for each seller, how many of their sold
-DKPs in each Item-Tail bucket (ST/MT/LT) are currently ATP (available) vs
-NOT ATP (unavailable). Computed at the DKP level — the Item-Tail badge is
-itself a DKP-level concept (all DKPCs under one DKP share the same
-badge), so DKP-level ATP (weight-independent) is the natural status to
-report here. DKPs with no badge at all (zero/blank sum_net_item_fcast)
-are excluded, consistent with how they're excluded from ranking.
+Builds the two outputs behind the "Category ST/MT/LT per Seller" tab:
+
+  1. build_tail_summary: an aggregated table — for each seller, how many
+     of their sold DKPs in each Item-Tail bucket (ST/MT/LT) are currently
+     ATP (available) vs NOT ATP (unavailable).
+  2. build_tail_dkp_list: a flat, single-sheet list of every badged DKP
+     across every seller (no per-seller split), for a "give me the raw
+     item list" download.
+
+Both are computed at the DKP level — the Item-Tail badge is itself a
+DKP-level concept (all DKPCs under one DKP share the same badge), so
+DKP-level ATP (weight-independent) is the natural status to report here.
+DKPs with no badge at all (zero/blank sum_net_item_fcast) are excluded
+from both, consistent with how they're excluded from ranking.
 """
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from .atp_engine import ATPResult
@@ -22,6 +30,25 @@ logger = get_logger(__name__)
 
 SELLER_ID_COLUMN = "Seller ID"
 SELLER_COLUMN = "Seller"
+DKP_COLUMN = "DKP"
+CATEGORY_COLUMN = "Category"
+BUCKET_COLUMN = "Bucket"
+TAIL_BADGE_COLUMN = "Tail Badge"
+STATUS_COLUMN = "Status"
+STATUS_AVAILABLE = "Available"
+STATUS_UNAVAILABLE = "Unavailable"
+
+# Categorical cell-fill colors for the DKP-list export, matching the same
+# red/yellow/green visual language as the on-screen/exported color scales.
+_TAIL_BADGE_COLORS = {
+    TailClassification.ST: "63BE7B",  # green
+    TailClassification.MT: "FFEB84",  # yellow
+    TailClassification.LT: "F8696B",  # red
+}
+_STATUS_COLORS = {
+    STATUS_AVAILABLE: "63BE7B",  # green
+    STATUS_UNAVAILABLE: "F8696B",  # red
+}
 
 
 def _count_columns(badge: str) -> tuple[str, str]:
@@ -71,4 +98,57 @@ def build_tail_summary(result: ATPResult) -> pd.DataFrame:
 
 
 def tail_summary_to_excel_bytes(tail_summary_df: pd.DataFrame) -> bytes:
-    return dataframe_to_excel_bytes(tail_summary_df, sheet_name="Tail_Summary")
+    return dataframe_to_excel_bytes(
+        tail_summary_df,
+        sheet_name="Tail_Summary",
+        color_scale_columns=_COUNT_COLUMNS,
+    )
+
+
+def build_tail_dkp_list(result: ATPResult) -> pd.DataFrame:
+    """
+    Returns a flat DataFrame — one row per badged DKP across ALL sellers
+    combined (no per-seller split): Seller ID, Seller, DKP, Category,
+    Bucket, Tail Badge, Status (Available/Unavailable). Sorted by Seller
+    then DKP.
+    """
+    df = result.dkp_results
+    badged = df[df[C.TAIL_BADGE].isin(TailClassification.ALL)]
+    if badged.empty:
+        return pd.DataFrame(
+            columns=[
+                SELLER_ID_COLUMN, SELLER_COLUMN, DKP_COLUMN,
+                CATEGORY_COLUMN, BUCKET_COLUMN, TAIL_BADGE_COLUMN, STATUS_COLUMN,
+            ]
+        )
+
+    listing = pd.DataFrame(
+        {
+            SELLER_ID_COLUMN: badged[C.SELLER_ID],
+            SELLER_COLUMN: badged[C.SELLER],
+            DKP_COLUMN: badged[C.DKP],
+            CATEGORY_COLUMN: badged[C.CATEGORY],
+            BUCKET_COLUMN: badged[C.BUCKET],
+            TAIL_BADGE_COLUMN: badged[C.TAIL_BADGE],
+            STATUS_COLUMN: np.where(badged["is_atp"], STATUS_AVAILABLE, STATUS_UNAVAILABLE),
+        }
+    )
+    listing = listing.sort_values(
+        [SELLER_COLUMN, DKP_COLUMN],
+        key=lambda s: s.astype(str).str.casefold(),
+        kind="stable",
+    ).reset_index(drop=True)
+
+    logger.info("Built tail DKP list with %d row(s).", len(listing))
+    return listing
+
+
+def tail_dkp_list_to_excel_bytes(tail_dkp_list_df: pd.DataFrame) -> bytes:
+    return dataframe_to_excel_bytes(
+        tail_dkp_list_df,
+        sheet_name="Tail_DKP_List",
+        categorical_color_columns={
+            TAIL_BADGE_COLUMN: _TAIL_BADGE_COLORS,
+            STATUS_COLUMN: _STATUS_COLORS,
+        },
+    )

@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterator
 
 import pandas as pd
+from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -132,6 +133,7 @@ class _CacheEntry:
     summary_df: pd.DataFrame
     missing_df: pd.DataFrame
     tail_summary_df: pd.DataFrame
+    tail_dkp_list_df: pd.DataFrame
     seller_zip_bytes: bytes | None = None
     created_at: float = field(default_factory=time.monotonic)
 
@@ -158,6 +160,7 @@ class ResultCache:
         summary_df: pd.DataFrame,
         missing_df: pd.DataFrame,
         tail_summary_df: pd.DataFrame,
+        tail_dkp_list_df: pd.DataFrame,
         seller_zip_bytes: bytes | None = None,
     ) -> str:
         result_id = uuid.uuid4().hex
@@ -170,6 +173,7 @@ class ResultCache:
                 summary_df=summary_df,
                 missing_df=missing_df,
                 tail_summary_df=tail_summary_df,
+                tail_dkp_list_df=tail_dkp_list_df,
                 seller_zip_bytes=seller_zip_bytes,
             )
         return result_id
@@ -192,11 +196,19 @@ class ResultCache:
 _HEADER_FILL = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")
 _HEADER_FONT = Font(color="FFFFFF", bold=True)
 
+# Standard Excel "red - yellow - green" 3-color-scale hex codes, matching
+# the on-screen background_gradient(cmap="RdYlGn") styling used in the UI.
+_COLOR_SCALE_RED = "F8696B"
+_COLOR_SCALE_YELLOW = "FFEB84"
+_COLOR_SCALE_GREEN = "63BE7B"
+
 
 def dataframe_to_excel_bytes(
     df: pd.DataFrame,
     sheet_name: str = "Sheet1",
     percent_columns: tuple[str, ...] = (),
+    color_scale_columns: tuple[str, ...] = (),
+    categorical_color_columns: dict[str, dict[str, str]] | None = None,
 ) -> bytes:
     """
     Serialize a DataFrame to a styled .xlsx file in memory.
@@ -206,10 +218,18 @@ def dataframe_to_excel_bytes(
         sheet_name: worksheet name.
         percent_columns: column names (as they appear in df) that hold
             0-100 percentage values and should be rendered as "12.34%".
+        color_scale_columns: column names that get a red->yellow->green
+            conditional-formatting color scale (relative to that column's
+            own min/mid/max), mirroring the on-screen background_gradient.
+        categorical_color_columns: {column_name: {value_as_str: "RRGGBB"}}
+            — cells in that column get a solid fill looked up by their
+            exact value (e.g. Tail Badge ST/MT/LT, an Available/
+            Unavailable status). Values with no entry are left unstyled.
 
     Returns:
         Raw xlsx file bytes, ready to stream in an HTTP response.
     """
+    categorical_color_columns = categorical_color_columns or {}
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df.to_excel(writer, sheet_name=sheet_name, index=False)
@@ -231,6 +251,32 @@ def dataframe_to_excel_bytes(
             col_letter = get_column_letter(col_idx)
             for row in range(2, len(df) + 2):
                 worksheet[f"{col_letter}{row}"].number_format = "0.00\\%"
+
+        if len(df) > 0:
+            for column_name in color_scale_columns:
+                if column_name not in df.columns:
+                    continue
+                col_idx = df.columns.get_loc(column_name) + 1
+                col_letter = get_column_letter(col_idx)
+                cell_range = f"{col_letter}2:{col_letter}{len(df) + 1}"
+                rule = ColorScaleRule(
+                    start_type="min", start_color=_COLOR_SCALE_RED,
+                    mid_type="percentile", mid_value=50, mid_color=_COLOR_SCALE_YELLOW,
+                    end_type="max", end_color=_COLOR_SCALE_GREEN,
+                )
+                worksheet.conditional_formatting.add(cell_range, rule)
+
+        for column_name, value_colors in categorical_color_columns.items():
+            if column_name not in df.columns:
+                continue
+            col_idx = df.columns.get_loc(column_name) + 1
+            col_letter = get_column_letter(col_idx)
+            for row_offset, value in enumerate(df[column_name], start=2):
+                hex_color = value_colors.get(str(value))
+                if hex_color:
+                    worksheet[f"{col_letter}{row_offset}"].fill = PatternFill(
+                        start_color=hex_color, end_color=hex_color, fill_type="solid"
+                    )
 
         # Autofit columns (openpyxl has no native autofit; approximate by
         # measuring the longest rendered value per column).

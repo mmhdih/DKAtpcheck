@@ -169,6 +169,10 @@ def test_calculate_response_includes_tail_summary_with_correct_counts():
     assert dl.status_code == 200
     assert dl.content
 
+    dl_list = client.get(f"/api/v1/download/tail-dkp-list/{body['result_id']}")
+    assert dl_list.status_code == 200
+    assert dl_list.content
+
 
 def test_sold_data_categories_endpoint_returns_distinct_sorted_values():
     response = client.post(
