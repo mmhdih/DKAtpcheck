@@ -187,7 +187,7 @@ else:
     st.caption("Upload Sold_Data above to choose which categories count as Bullion.")
 
 tail_badges = st.multiselect(
-    "Item-Tail badges to include (ST/MT/LT, ranked by sum_net_item_fcast marketplace-wide)",
+    "Item-Tail badges to include (ST/MT/LT, ranked by sum_net_item_fcast marketplace-wide, separately for Bullion and Jewelry)",
     options=TAIL_BADGE_OPTIONS, default=TAIL_BADGE_OPTIONS,
 )
 generate_seller_zip = st.checkbox("Also generate the per-seller missing-items ZIP export (for emailing to sellers)")

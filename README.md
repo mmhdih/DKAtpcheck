@@ -125,15 +125,19 @@ Bullion (including blank/missing categories) is treated as Jewelry.
 ## Item-Tail classification (ST/MT/LT)
 
 Every sold DKP is ranked **marketplace-wide** (across every seller
-combined, not per seller) by its total `sum_net_item_fcast`, using a
-standard ABC/Pareto cumulative-share cutoff: the top DKPs making up the
-first 30% of total forecasted item volume get **ST**, the next 40%
-(30–70%) get **MT**, and the remaining 30% get **LT**. All DKPCs under a
-badged DKP inherit that DKP's badge. DKPs whose total `sum_net_item_fcast`
-is zero or entirely blank get **no badge at all** (they're excluded from
-the ranking, not defaulted to LT). `tail_badges` is a request field
-(default: all three, i.e. no filtering) — filtering happens *before* the
-ATP calculation, so it changes the Summary percentages too, not just
+combined, not per seller) by its total `sum_net_item_fcast` — but
+**separately within each category bucket**: Bullion DKPs are ranked only
+against other Bullion DKPs, and Jewelry DKPs only against other Jewelry
+DKPs, so one bucket's volume never affects the other bucket's cutoffs.
+Within each bucket, a standard ABC/Pareto cumulative-share cutoff applies:
+the top DKPs making up the first 30% of that bucket's forecasted item
+volume get **ST**, the next 40% (30–70%) get **MT**, and the remaining
+30% get **LT**. All DKPCs under a badged DKP inherit that DKP's badge.
+DKPs whose total `sum_net_item_fcast` is zero or entirely blank get **no
+badge at all** (they're excluded from the ranking, not defaulted to LT).
+`tail_badges` is a request field (default: all three, i.e. no filtering)
+— filtering happens *before* the ATP calculation, so it changes the
+Summary percentages too, not just
 which rows are displayed.
 
 ## Per-seller missing-items ZIP export

@@ -155,6 +155,11 @@ async def calculate(
 
         sold_df = sold_result.df
 
+        # Bucket must be assigned before tail classification: ST/MT/LT is
+        # ranked separately within each bucket, so a DKP's badge never
+        # depends on volume in the other bucket.
+        sold_df = assign_bucket(sold_df, bullion_categories=set(bullion_categories))
+
         tail_by_dkp = classify_tails(sold_df)
         sold_df = sold_df.merge(
             tail_by_dkp, on=[CanonicalColumns.SELLER_KEY, CanonicalColumns.DKP], how="left"
@@ -164,8 +169,6 @@ async def calculate(
             sold_df = sold_df[sold_df[CanonicalColumns.TAIL_BADGE].isin(selected_badges)].reset_index(
                 drop=True
             )
-
-        sold_df = assign_bucket(sold_df, bullion_categories=set(bullion_categories))
 
         index = ATPIndex.build(live_result.df)
         engine = ATPEngine(index=index, tolerance_pct=tolerance_pct)

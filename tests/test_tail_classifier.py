@@ -3,13 +3,18 @@ import pandas as pd
 import pytest
 
 from backend.config import CanonicalColumns as C
+from backend.config import CategoryBucket
 from backend.config import TailClassification
 from backend.tail_classifier import classify_tails
 
 
-def _sold_totals(rows: list[tuple[str, str, float | None]]) -> pd.DataFrame:
-    """rows: (seller_key, dkp, net_item_fcast) — one row per sold DKPC."""
-    return pd.DataFrame(rows, columns=[C.SELLER_KEY, C.DKP, C.NET_ITEM_FCAST])
+def _sold_totals(
+    rows: list[tuple[str, str, float | None]], *, bucket: str = CategoryBucket.JEWELRY
+) -> pd.DataFrame:
+    """rows: (seller_key, dkp, net_item_fcast) — one row per sold DKPC, all in the same bucket."""
+    df = pd.DataFrame(rows, columns=[C.SELLER_KEY, C.DKP, C.NET_ITEM_FCAST])
+    df[C.BUCKET] = bucket
+    return df
 
 
 def _badge_for(result: pd.DataFrame, seller_key: str, dkp: str) -> str | None:
@@ -19,13 +24,14 @@ def _badge_for(result: pd.DataFrame, seller_key: str, dkp: str) -> str | None:
 
 def test_ranking_is_global_across_all_sellers():
     # Seller "a" and seller "b" each have a dominant DKP of EQUAL volume
-    # (99). If ranking were done separately per seller, both would be
-    # symmetric and land in the same bucket. Ranked GLOBALLY (one shared
-    # cumulative curve across every seller combined), seller "a"'s DKP2
-    # sorts first (stable tie-break preserves original order) and lands
-    # at 49.5% cumulative (MT), while seller "b"'s DKP4 only reaches the
-    # curve after DKP2 is already counted, landing at 99% (LT) — proving
-    # the denominator/ordering is the grand total, not each seller's own.
+    # (99), both in the same bucket. If ranking were done separately per
+    # seller, both would be symmetric and land in the same bucket. Ranked
+    # GLOBALLY (one shared cumulative curve across every seller combined),
+    # seller "a"'s DKP2 sorts first (stable tie-break preserves original
+    # order) and lands at 49.5% cumulative (MT), while seller "b"'s DKP4
+    # only reaches the curve after DKP2 is already counted, landing at 99%
+    # (LT) — proving the denominator/ordering is the grand total, not each
+    # seller's own.
     sold = _sold_totals(
         [
             ("a", "D1", 1.0),
@@ -37,6 +43,30 @@ def test_ranking_is_global_across_all_sellers():
     result = classify_tails(sold)
     assert _badge_for(result, "a", "D2") == TailClassification.MT
     assert _badge_for(result, "b", "D4") == TailClassification.LT
+
+
+def test_ranking_is_independent_per_bucket():
+    # Bullion's volume must have NO effect on how Jewelry's own DKPs are
+    # ranked against each other, and vice versa — each bucket forms its
+    # own independent Pareto curve. Within Bullion alone (total 100):
+    # D_BULLION is the unambiguous largest single item (25, no ties, so
+    # groupby's internal alphabetical pre-sort can't affect tie-breaking)
+    # and ranks first, cum=25% -> ST.
+    bullion = _sold_totals(
+        [("s", "D_BULLION", 25.0), ("s", "DB2", 20.0), ("s", "DB3", 20.0), ("s", "DB4", 20.0), ("s", "DB5", 15.0)],
+        bucket=CategoryBucket.BULLION,
+    )
+    # Within Jewelry alone: D2 (40, largest) cum=40% -> MT; D1 (30) cum=70% -> MT; D3 (30) cum=100% -> LT.
+    jewelry = _sold_totals(
+        [("s", "D1", 30.0), ("s", "D2", 40.0), ("s", "D3", 30.0)], bucket=CategoryBucket.JEWELRY
+    )
+    sold = pd.concat([bullion, jewelry], ignore_index=True)
+    result = classify_tails(sold)
+
+    assert _badge_for(result, "s", "D_BULLION") == TailClassification.ST
+    assert _badge_for(result, "s", "D2") == TailClassification.MT
+    assert _badge_for(result, "s", "D1") == TailClassification.MT
+    assert _badge_for(result, "s", "D3") == TailClassification.LT
 
 
 def test_st_cutoff_is_inclusive_at_30():
