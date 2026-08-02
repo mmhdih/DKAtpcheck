@@ -97,7 +97,7 @@ def test_zip_filename_is_sanitized_and_includes_seller_id():
     assert len(names) == 1
     assert "/" not in names[0]
     assert "\\" not in names[0]
-    assert names[0].startswith("S_1")
+    assert names[0].startswith("S 1")
     assert names[0].endswith(".xlsx")
 
 
@@ -107,6 +107,18 @@ def test_zip_filename_uses_seller_id_dash_seller_name_format():
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
         names = zf.namelist()
     assert names == ["42-ACME.xlsx"]
+
+
+def test_zip_filename_preserves_persian_seller_name():
+    # Regression test: an earlier ASCII-only sanitizer treated every
+    # non-Latin character as unsafe, collapsing any Persian seller name
+    # down to a bare "unknown" (e.g. "174106-unknown.xlsx" instead of
+    # "174106-آذر نقره.xlsx").
+    rows = [_dkpc_row(**{C.SELLER_ID: "174106", C.SELLER: "آذر نقره"})]
+    zip_bytes = build_seller_missing_zip(_result(rows))
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        names = zf.namelist()
+    assert names == ["174106-آذر نقره.xlsx"]
 
 
 def test_zip_output_columns_are_exactly_the_expected_set():

@@ -33,11 +33,18 @@ CATEGORY_COLUMN = "Category"
 BUCKET_COLUMN = "Bucket"
 TAIL_BADGE_COLUMN = "Tail Badge"
 
-_FILENAME_SANITIZE_RE = re.compile(r"[^A-Za-z0-9_-]+")
+# Characters genuinely unsafe in a filename across Windows/Linux/macOS:
+# path separators, Windows-reserved punctuation, and control characters.
+# Everything else — including non-ASCII scripts like Persian/Arabic — is
+# left untouched, so seller names stay human-readable in the exported
+# filenames (an earlier ASCII-only allowlist here collapsed every
+# non-Latin seller name, e.g. "آذر نقره", down to a bare "unknown").
+_FILENAME_UNSAFE_RE = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')
 
 
 def _safe_filename_part(value: str) -> str:
-    return _FILENAME_SANITIZE_RE.sub("_", str(value)).strip("_") or "unknown"
+    text = _FILENAME_UNSAFE_RE.sub("_", str(value)).strip("_. ")
+    return text or "unknown"
 
 
 def build_seller_missing_zip(result: ATPResult) -> bytes:
