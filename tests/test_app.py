@@ -123,6 +123,53 @@ def test_calculate_accepts_csv_uploads():
     assert response.json()["summary"][0]["seller_id"] == "S1"
 
 
+def test_calculate_response_includes_tail_summary_with_correct_counts():
+    # D1/D1C1 exists in Live_Data (ATP); D_X/D_XC1 and D_Y/D_YC1 don't (not ATP).
+    sold_rows = [
+        {
+            "marketplace_seller_id": "S1", "marketplace_seller_name": "ACME",
+            "product_id": "D1", "product_variant_id": "D1C1",
+            "product_variant_name_fa": 1.0, "category_name_fa": "",
+            "sum_net_item_fcast": 30,
+        },
+        {
+            "marketplace_seller_id": "S1", "marketplace_seller_name": "ACME",
+            "product_id": "D_X", "product_variant_id": "D_XC1",
+            "product_variant_name_fa": 1.0, "category_name_fa": "",
+            "sum_net_item_fcast": 40,
+        },
+        {
+            "marketplace_seller_id": "S1", "marketplace_seller_name": "ACME",
+            "product_id": "D_Y", "product_variant_id": "D_YC1",
+            "product_variant_name_fa": 1.0, "category_name_fa": "",
+            "sum_net_item_fcast": 30,
+        },
+    ]
+    response = client.post(
+        "/api/v1/calculate",
+        files={
+            "live_file": ("Live_Data.xlsx", _live_bytes()),
+            "sold_file": ("Sold_Data.xlsx", _xlsx_bytes(pd.DataFrame(sold_rows))),
+        },
+        data={"tolerance_pct": 10},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["tail_summary"]) == 1
+    row = body["tail_summary"][0]
+    assert row["seller_id"] == "S1"
+    assert row["mt_available"] == 1  # D1: MT badge, ATP
+    assert row["mt_unavailable"] == 1  # D_X: MT badge, NOT ATP
+    assert row["lt_unavailable"] == 1  # D_Y: LT badge, NOT ATP
+    assert row["st_available"] == 0
+    assert row["st_unavailable"] == 0
+    assert row["lt_available"] == 0
+
+    dl = client.get(f"/api/v1/download/tail-summary/{body['result_id']}")
+    assert dl.status_code == 200
+    assert dl.content
+
+
 def test_sold_data_categories_endpoint_returns_distinct_sorted_values():
     response = client.post(
         "/api/v1/sold-data/categories",

@@ -131,15 +131,16 @@ def timer() -> Iterator[dict[str, float]]:
 class _CacheEntry:
     summary_df: pd.DataFrame
     missing_df: pd.DataFrame
+    tail_summary_df: pd.DataFrame
     seller_zip_bytes: bytes | None = None
     created_at: float = field(default_factory=time.monotonic)
 
 
 class ResultCache:
     """
-    Thread-safe, in-memory, TTL-based cache mapping a result_id to the two
-    computed DataFrames (Summary, ATP_Missing), so the download endpoints
-    don't need to recompute the ATP pipeline.
+    Thread-safe, in-memory, TTL-based cache mapping a result_id to the
+    computed DataFrames (Summary, ATP_Missing, Tail_Summary), so the
+    download endpoints don't need to recompute the ATP pipeline.
 
     NOTE: this assumes a single backend process/worker. If the service is
     ever scaled horizontally, replace this with a shared store (Redis, a
@@ -156,6 +157,7 @@ class ResultCache:
         self,
         summary_df: pd.DataFrame,
         missing_df: pd.DataFrame,
+        tail_summary_df: pd.DataFrame,
         seller_zip_bytes: bytes | None = None,
     ) -> str:
         result_id = uuid.uuid4().hex
@@ -165,7 +167,10 @@ class ResultCache:
                 oldest_id = min(self._store, key=lambda k: self._store[k].created_at)
                 del self._store[oldest_id]
             self._store[result_id] = _CacheEntry(
-                summary_df=summary_df, missing_df=missing_df, seller_zip_bytes=seller_zip_bytes,
+                summary_df=summary_df,
+                missing_df=missing_df,
+                tail_summary_df=tail_summary_df,
+                seller_zip_bytes=seller_zip_bytes,
             )
         return result_id
 

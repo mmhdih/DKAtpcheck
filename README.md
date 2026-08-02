@@ -27,6 +27,7 @@ atp_analyzer/
 │   ├── tail_classifier.py      ST/MT/LT Item-Tail classification (ABC/Pareto)
 │   ├── summary_generator.py    builds the Summary table
 │   ├── missing_generator.py    builds the ATP_Missing table
+│   ├── tail_summary_generator.py builds the Tail Summary table (ST/MT/LT x ATP status)
 │   ├── seller_export.py        per-seller NOT-ATP ZIP export
 │   └── templates.py            downloadable example Live_Data/Sold_Data templates
 ├── frontend/
@@ -151,6 +152,17 @@ output; rows with a zero/blank value are excluded entirely). Meant for
 emailing each seller their own actionable list. It's opt-in and only
 built when requested, since it's extra work on top of the normal
 Summary/Missing calculation.
+
+## Tail Summary (ST/MT/LT per seller, by ATP status)
+
+A third UI tab / `tail_summary` response field / `GET
+/api/v1/download/tail-summary/{result_id}` export shows, per seller, how
+many of their sold DKPs in each Item-Tail bucket are currently ATP
+(available) vs NOT ATP (unavailable) — e.g. `ST Available`, `ST
+Unavailable`, `MT Available`, `MT Unavailable`, `LT Available`, `LT
+Unavailable`. DKP-level (weight-independent) counts, since the badge
+itself is a DKP-level concept. Sellers with no badged DKPs at all are
+omitted.
 
 ## Performance
 

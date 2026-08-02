@@ -264,7 +264,7 @@ if result:
         "DKPC ATP % (Jewelry)", "DKP ATP % (Jewelry)",
     ]
 
-    tab_summary, tab_missing = st.tabs(["📊 Summary", "🔻 ATP Missing"])
+    tab_summary, tab_missing, tab_tail = st.tabs(["📊 Summary", "🔻 ATP Missing", "🏷️ ST/MT/LT per Seller"])
 
     with tab_summary:
         styled_summary = summary_df.style.format({c: "{:.2f}%" for c in pct_columns})
@@ -320,6 +320,29 @@ if result:
                 data=dl_zip.content,
                 file_name="ATP_Missing_by_Seller.zip",
                 mime="application/zip",
+                use_container_width=True,
+            )
+
+    with tab_tail:
+        tail_summary_df = pd.DataFrame(result["tail_summary"]).rename(
+            columns={
+                "seller_id": "Seller ID", "seller": "Seller",
+                "st_available": "ST Available", "st_unavailable": "ST Unavailable",
+                "mt_available": "MT Available", "mt_unavailable": "MT Unavailable",
+                "lt_available": "LT Available", "lt_unavailable": "LT Unavailable",
+            }
+        )
+        if tail_summary_df.empty:
+            st.info("No sold DKP has a resolvable Item-Tail badge (sum_net_item_fcast is zero/blank for all).")
+        else:
+            st.caption("DKP counts per seller, per Item-Tail badge, split by ATP status (weight-independent, DKP-level).")
+            st.dataframe(tail_summary_df, use_container_width=True, hide_index=True)
+            dl_tail_summary = requests.get(f"{API}/download/tail-summary/{result['result_id']}", timeout=60)
+            st.download_button(
+                "⬇ Download Tail_Summary.xlsx",
+                data=dl_tail_summary.content,
+                file_name="Tail_Summary.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
 

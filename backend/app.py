@@ -10,6 +10,7 @@ Endpoints:
     POST /api/v1/calculate                      run the full ATP pipeline on two uploaded files
     GET  /api/v1/download/summary/{result_id}       Summary.xlsx
     GET  /api/v1/download/missing/{result_id}       ATP_Missing.xlsx
+    GET  /api/v1/download/tail-summary/{result_id}  Tail_Summary.xlsx
     GET  /api/v1/download/seller-zip/{result_id}    ATP_Missing_by_Seller.zip (opt-in)
     GET  /api/v1/templates/live-data            Live_Data_Template.xlsx
     GET  /api/v1/templates/sold-data            Sold_Data_Template.xlsx
@@ -17,7 +18,8 @@ Endpoints:
 This module intentionally contains no business logic — it validates
 HTTP-level concerns (file size, presence of both files) and delegates
 everything else to excel_loader / atp_engine / tail_classifier /
-summary_generator / missing_generator / seller_export / templates.
+summary_generator / missing_generator / tail_summary_generator /
+seller_export / templates.
 """
 from __future__ import annotations
 
@@ -38,10 +40,12 @@ from .models import (
     ErrorResponse,
     MissingRow,
     SummaryRow,
+    TailSummaryRow,
 )
 from .seller_export import build_seller_missing_zip
 from .summary_generator import build_summary, summary_to_excel_bytes
 from .tail_classifier import classify_tails
+from .tail_summary_generator import build_tail_summary, tail_summary_to_excel_bytes
 from .templates import build_live_data_template_bytes, build_sold_data_template_bytes
 from .utils import ResultCache, get_logger, timer
 
@@ -176,10 +180,16 @@ async def calculate(
 
         summary_df = build_summary(atp_result)
         missing_df = build_missing(atp_result)
+        tail_summary_df = build_tail_summary(atp_result)
 
         seller_zip_bytes = build_seller_missing_zip(atp_result) if generate_seller_zip else None
 
-    result_id = _cache.put(summary_df=summary_df, missing_df=missing_df, seller_zip_bytes=seller_zip_bytes)
+    result_id = _cache.put(
+        summary_df=summary_df,
+        missing_df=missing_df,
+        tail_summary_df=tail_summary_df,
+        seller_zip_bytes=seller_zip_bytes,
+    )
 
     warnings = live_result.warnings + sold_result.warnings
     meta = CalculationMeta(
@@ -231,6 +241,20 @@ async def calculate(
             )
         ],
         missing_total_count=len(missing_df),
+        tail_summary=[
+            TailSummaryRow(
+                seller_id=sid, seller=s,
+                st_available=st_a, st_unavailable=st_u,
+                mt_available=mt_a, mt_unavailable=mt_u,
+                lt_available=lt_a, lt_unavailable=lt_u,
+            )
+            for sid, s, st_a, st_u, mt_a, mt_u, lt_a, lt_u in zip(
+                tail_summary_df["Seller ID"], tail_summary_df["Seller"],
+                tail_summary_df["ST Available"], tail_summary_df["ST Unavailable"],
+                tail_summary_df["MT Available"], tail_summary_df["MT Unavailable"],
+                tail_summary_df["LT Available"], tail_summary_df["LT Unavailable"],
+            )
+        ],
         meta=meta,
     )
 
@@ -264,6 +288,17 @@ def download_missing(result_id: str) -> StreamingResponse:
         io.BytesIO(xlsx_bytes),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=ATP_Missing.xlsx"},
+    )
+
+
+@app.get(f"{settings.api_v1_prefix}/download/tail-summary/{{result_id}}")
+def download_tail_summary(result_id: str) -> StreamingResponse:
+    entry = _get_cache_entry_or_404(result_id)
+    xlsx_bytes = tail_summary_to_excel_bytes(entry.tail_summary_df)
+    return StreamingResponse(
+        io.BytesIO(xlsx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=Tail_Summary.xlsx"},
     )
 
 

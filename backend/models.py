@@ -93,6 +93,19 @@ class MissingRow(BaseModel):
     bucket: str
 
 
+class TailSummaryRow(BaseModel):
+    """One row of the Tail Summary table — DKP counts per seller, per ST/MT/LT badge, by ATP status."""
+
+    seller_id: str
+    seller: str
+    st_available: int = Field(..., ge=0)
+    st_unavailable: int = Field(..., ge=0)
+    mt_available: int = Field(..., ge=0)
+    mt_unavailable: int = Field(..., ge=0)
+    lt_available: int = Field(..., ge=0)
+    lt_unavailable: int = Field(..., ge=0)
+
+
 class CalculationMeta(BaseModel):
     """Diagnostics about a calculation run, shown in the UI and useful for support."""
 
@@ -123,6 +136,7 @@ class CalculationResponse(BaseModel):
         ),
     )
     missing_total_count: int
+    tail_summary: list[TailSummaryRow] = Field(default_factory=list)
     meta: CalculationMeta
 
 
