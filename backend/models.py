@@ -56,8 +56,12 @@ class CalculationRequest(BaseModel):
     generate_seller_zip: bool = Field(
         False, description="Also build the per-seller NOT-ATP ZIP export."
     )
-    generate_tail_seller_zip: bool = Field(
-        False, description="Also build the per-seller ST/MT/LT Item-Tail ZIP export."
+    generate_seller_tail_zip: bool = Field(
+        False,
+        description=(
+            "Also build the per-seller ZIP export of the standalone Per-Seller "
+            "Item-Tail tab (each seller's own ST/MT/LT ranking, split one xlsx per seller)."
+        ),
     )
 
     @field_validator("tolerance_pct")
@@ -97,7 +101,13 @@ class MissingRow(BaseModel):
 
 
 class TailSummaryRow(BaseModel):
-    """One row of the Tail Summary table — DKP counts per seller, per ST/MT/LT badge, by ATP status."""
+    """
+    One row of a Tail Summary table — DKP counts per seller, per ST/MT/LT
+    badge, by ATP status. Shared shape for both the marketplace-wide
+    "Category ST/MT/LT PER Seller" tab and the standalone, per-seller-
+    ranked "Per-Seller Item-Tail" tab — only how the badge was computed
+    differs between the two.
+    """
 
     seller_id: str
     seller: str
@@ -122,7 +132,7 @@ class CalculationMeta(BaseModel):
     bullion_categories_selected: list[str] = Field(default_factory=list)
     tail_badges_selected: list[str] = Field(default_factory=lambda: list(TailClassification.ALL))
     seller_zip_generated: bool = False
-    tail_seller_zip_generated: bool = False
+    seller_tail_zip_generated: bool = False
     execution_seconds: float
     warnings: list[str] = Field(default_factory=list)
 
@@ -141,6 +151,7 @@ class CalculationResponse(BaseModel):
     )
     missing_total_count: int
     tail_summary: list[TailSummaryRow] = Field(default_factory=list)
+    seller_tail_summary: list[TailSummaryRow] = Field(default_factory=list)
     meta: CalculationMeta
 
 

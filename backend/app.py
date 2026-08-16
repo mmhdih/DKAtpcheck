@@ -13,7 +13,9 @@ Endpoints:
     GET  /api/v1/download/tail-summary/{result_id}  Tail_Summary.xlsx
     GET  /api/v1/download/tail-dkp-list/{result_id} Tail_DKP_List.xlsx
     GET  /api/v1/download/seller-zip/{result_id}    ATP_Missing_by_Seller.zip (opt-in)
-    GET  /api/v1/download/tail-seller-zip/{result_id} Tail_DKP_List_by_Seller.zip (opt-in)
+    GET  /api/v1/download/seller-tail-summary/{result_id}  Seller_Tail_Summary.xlsx
+    GET  /api/v1/download/seller-tail-dkp-list/{result_id} Seller_Tail_DKP_List.xlsx
+    GET  /api/v1/download/seller-tail-zip/{result_id}      Seller_Tail_DKP_List_by_Seller.zip (opt-in)
     GET  /api/v1/templates/live-data            Live_Data_Template.xlsx
     GET  /api/v1/templates/sold-data            Sold_Data_Template.xlsx
 
@@ -31,7 +33,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from .atp_engine import ATPEngine, ATPIndex, assign_bucket
+from .atp_engine import ATPEngine, ATPIndex, ATPResult, assign_bucket
 from .config import CanonicalColumns, TailClassification, get_settings
 from .excel_loader import ExcelValidationError, load_live_data, load_sold_data
 from .missing_generator import build_missing, missing_to_excel_bytes
@@ -46,7 +48,7 @@ from .models import (
 )
 from .seller_export import build_seller_missing_zip
 from .summary_generator import build_summary, summary_to_excel_bytes
-from .tail_classifier import classify_tails
+from .tail_classifier import classify_tails, classify_tails_per_seller
 from .tail_summary_generator import (
     build_tail_dkp_list,
     build_tail_dkp_zip,
@@ -141,8 +143,9 @@ async def calculate(
         description="Which ST/MT/LT Item-Tail badges to include",
     ),
     generate_seller_zip: bool = Form(False, description="Also build the per-seller NOT-ATP ZIP export"),
-    generate_tail_seller_zip: bool = Form(
-        False, description="Also build the per-seller ST/MT/LT Item-Tail ZIP export"
+    generate_seller_tail_zip: bool = Form(
+        False,
+        description="Also build the per-seller ZIP export of the standalone Per-Seller Item-Tail tab",
     ),
 ) -> CalculationResponse:
     if tolerance_pct > 100:
@@ -175,6 +178,13 @@ async def calculate(
         # depends on volume in the other bucket.
         sold_df = assign_bucket(sold_df, bullion_categories=set(bullion_categories))
 
+        # Per-seller ranking is computed on the FULL bucketed universe (a
+        # seller's own Pareto curve must reflect their true sales mix, not
+        # whatever the marketplace-wide tail_badges filter below happens
+        # to keep) — it's an independent classification, not a variant of
+        # the marketplace-wide one merged into sold_df.
+        seller_tail_by_dkp = classify_tails_per_seller(sold_df)
+
         tail_by_dkp = classify_tails(sold_df)
         sold_df = sold_df.merge(
             tail_by_dkp, on=[CanonicalColumns.SELLER_KEY, CanonicalColumns.DKP], how="left"
@@ -194,16 +204,36 @@ async def calculate(
         tail_summary_df = build_tail_summary(atp_result)
         tail_dkp_list_df = build_tail_dkp_list(atp_result)
 
+        # Standalone "Per-Seller Item-Tail" tab: same dkp_results rows (so
+        # it respects the same marketplace-wide tail_badges filter and ATP
+        # outcome as every other tab), but with the tail_badge column
+        # swapped for the per-seller-ranked one instead of the
+        # marketplace-wide one.
+        seller_scoped_dkp_results = atp_result.dkp_results.drop(
+            columns=[CanonicalColumns.TAIL_BADGE]
+        ).merge(
+            seller_tail_by_dkp, on=[CanonicalColumns.SELLER_KEY, CanonicalColumns.DKP], how="left"
+        )
+        seller_scoped_result = ATPResult(
+            dkpc_results=atp_result.dkpc_results, dkp_results=seller_scoped_dkp_results
+        )
+        seller_tail_summary_df = build_tail_summary(seller_scoped_result)
+        seller_tail_dkp_list_df = build_tail_dkp_list(seller_scoped_result)
+
         seller_zip_bytes = build_seller_missing_zip(atp_result) if generate_seller_zip else None
-        tail_seller_zip_bytes = build_tail_dkp_zip(atp_result) if generate_tail_seller_zip else None
+        seller_tail_zip_bytes = (
+            build_tail_dkp_zip(seller_scoped_result) if generate_seller_tail_zip else None
+        )
 
     result_id = _cache.put(
         summary_df=summary_df,
         missing_df=missing_df,
         tail_summary_df=tail_summary_df,
         tail_dkp_list_df=tail_dkp_list_df,
+        seller_tail_summary_df=seller_tail_summary_df,
+        seller_tail_dkp_list_df=seller_tail_dkp_list_df,
         seller_zip_bytes=seller_zip_bytes,
-        tail_seller_zip_bytes=tail_seller_zip_bytes,
+        seller_tail_zip_bytes=seller_tail_zip_bytes,
     )
 
     warnings = live_result.warnings + sold_result.warnings
@@ -218,7 +248,7 @@ async def calculate(
         bullion_categories_selected=bullion_categories,
         tail_badges_selected=sorted(selected_badges),
         seller_zip_generated=seller_zip_bytes is not None,
-        tail_seller_zip_generated=tail_seller_zip_bytes is not None,
+        seller_tail_zip_generated=seller_tail_zip_bytes is not None,
         execution_seconds=round(t["seconds"], 3),
         warnings=warnings,
     )
@@ -269,6 +299,20 @@ async def calculate(
                 tail_summary_df["ST Available"], tail_summary_df["ST Unavailable"],
                 tail_summary_df["MT Available"], tail_summary_df["MT Unavailable"],
                 tail_summary_df["LT Available"], tail_summary_df["LT Unavailable"],
+            )
+        ],
+        seller_tail_summary=[
+            TailSummaryRow(
+                seller_id=sid, seller=s,
+                st_available=st_a, st_unavailable=st_u,
+                mt_available=mt_a, mt_unavailable=mt_u,
+                lt_available=lt_a, lt_unavailable=lt_u,
+            )
+            for sid, s, st_a, st_u, mt_a, mt_u, lt_a, lt_u in zip(
+                seller_tail_summary_df["Seller ID"], seller_tail_summary_df["Seller"],
+                seller_tail_summary_df["ST Available"], seller_tail_summary_df["ST Unavailable"],
+                seller_tail_summary_df["MT Available"], seller_tail_summary_df["MT Unavailable"],
+                seller_tail_summary_df["LT Available"], seller_tail_summary_df["LT Unavailable"],
             )
         ],
         meta=meta,
@@ -347,21 +391,43 @@ def download_seller_zip(result_id: str) -> StreamingResponse:
     )
 
 
-@app.get(f"{settings.api_v1_prefix}/download/tail-seller-zip/{{result_id}}")
-def download_tail_seller_zip(result_id: str) -> StreamingResponse:
+@app.get(f"{settings.api_v1_prefix}/download/seller-tail-summary/{{result_id}}")
+def download_seller_tail_summary(result_id: str) -> StreamingResponse:
     entry = _get_cache_entry_or_404(result_id)
-    if entry.tail_seller_zip_bytes is None:
+    xlsx_bytes = tail_summary_to_excel_bytes(entry.seller_tail_summary_df)
+    return StreamingResponse(
+        io.BytesIO(xlsx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=Seller_Tail_Summary.xlsx"},
+    )
+
+
+@app.get(f"{settings.api_v1_prefix}/download/seller-tail-dkp-list/{{result_id}}")
+def download_seller_tail_dkp_list(result_id: str) -> StreamingResponse:
+    entry = _get_cache_entry_or_404(result_id)
+    xlsx_bytes = tail_dkp_list_to_excel_bytes(entry.seller_tail_dkp_list_df)
+    return StreamingResponse(
+        io.BytesIO(xlsx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=Seller_Tail_DKP_List.xlsx"},
+    )
+
+
+@app.get(f"{settings.api_v1_prefix}/download/seller-tail-zip/{{result_id}}")
+def download_seller_tail_zip(result_id: str) -> StreamingResponse:
+    entry = _get_cache_entry_or_404(result_id)
+    if entry.seller_tail_zip_bytes is None:
         raise HTTPException(
             status_code=400,
             detail=(
-                "Tail-by-seller ZIP export was not generated for this result. "
-                "Re-run the calculation with 'generate_tail_seller_zip' enabled."
+                "Per-Seller Item-Tail ZIP export was not generated for this result. "
+                "Re-run the calculation with 'generate_seller_tail_zip' enabled."
             ),
         )
     return StreamingResponse(
-        io.BytesIO(entry.tail_seller_zip_bytes),
+        io.BytesIO(entry.seller_tail_zip_bytes),
         media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=Tail_DKP_List_by_Seller.zip"},
+        headers={"Content-Disposition": "attachment; filename=Seller_Tail_DKP_List_by_Seller.zip"},
     )
 
 

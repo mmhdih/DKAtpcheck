@@ -3,15 +3,22 @@ tail_classifier.py
 -------------------
 Classifies each (seller_key, dkp) pair from Sold_Data into an ABC/Pareto
 "Item-Tail" badge — ST / MT / LT — by its share of total forecasted item
-volume (sum_net_item_fcast), ranked GLOBALLY across every seller combined
-(a single marketplace-wide Pareto ranking, not one per seller) — but
-computed SEPARATELY per category bucket (Bullion vs Jewelry), so a DKP's
-badge only ever competes against other DKPs in the same bucket.
+volume (sum_net_item_fcast), computed SEPARATELY per category bucket
+(Bullion vs Jewelry), so a DKP's badge only ever competes against other
+DKPs in the same bucket. Two variants of this ranking are offered:
+
+  - classify_tails: ranked GLOBALLY across every seller combined (a
+    single marketplace-wide Pareto ranking per bucket, not one per
+    seller) — feeds the "Category ST/MT/LT PER Seller" tab.
+  - classify_tails_per_seller: ranked separately for EACH seller's own
+    (bucket, dkp) totals — a seller's own top 30% of their own sold
+    volume is ST, regardless of how that compares to other sellers —
+    feeds the standalone "Per-Seller Item-Tail" tab.
 
 Deliberately decoupled from atp_engine.py's matching logic: this is a
 reporting/classification concern over Sold_Data alone. It does depend on
 `bucket` (see atp_engine.assign_bucket), so assign_bucket() must run
-BEFORE classify_tails() in the calculation pipeline.
+BEFORE either classify function in the calculation pipeline.
 """
 from __future__ import annotations
 
@@ -44,6 +51,23 @@ def _classify_within_bucket(group: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _dkp_totals(sold_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    (seller_key, dkp) -> summed net_item_fcast + bucket, filtered down to
+    pairs whose total is a positive, non-NaN number (the shared precursor
+    to both classify_tails and classify_tails_per_seller).
+    """
+    dkp_bucket = sold_df.groupby([C.SELLER_KEY, C.DKP])[C.BUCKET].first().reset_index()
+
+    totals = (
+        sold_df.groupby([C.SELLER_KEY, C.DKP])[C.NET_ITEM_FCAST]
+        .sum(min_count=1)
+        .reset_index(name="_total_fcast")
+    )
+    totals = totals.merge(dkp_bucket, on=[C.SELLER_KEY, C.DKP])
+    return totals[totals["_total_fcast"].notna() & (totals["_total_fcast"] > 0)]
+
+
 def classify_tails(sold_df: pd.DataFrame) -> pd.DataFrame:
     """
     Args:
@@ -59,19 +83,11 @@ def classify_tails(sold_df: pd.DataFrame) -> pd.DataFrame:
         matching sold_df row) is a positive, non-NaN number. Ranking and
         the 30%/70% cumulative cutoffs are computed independently within
         each bucket (a DKP's badge never depends on volume in the other
-        bucket). Pairs with a zero or entirely-NaN/blank total are OMITTED
-        entirely — callers must left-join and treat a missing match as
-        "no badge", never LT.
+        bucket, nor on which seller it belongs to). Pairs with a zero or
+        entirely-NaN/blank total are OMITTED entirely — callers must
+        left-join and treat a missing match as "no badge", never LT.
     """
-    dkp_bucket = sold_df.groupby([C.SELLER_KEY, C.DKP])[C.BUCKET].first().reset_index()
-
-    totals = (
-        sold_df.groupby([C.SELLER_KEY, C.DKP])[C.NET_ITEM_FCAST]
-        .sum(min_count=1)
-        .reset_index(name="_total_fcast")
-    )
-    totals = totals.merge(dkp_bucket, on=[C.SELLER_KEY, C.DKP])
-    totals = totals[totals["_total_fcast"].notna() & (totals["_total_fcast"] > 0)]
+    totals = _dkp_totals(sold_df)
 
     if totals.empty:
         return totals.drop(columns=["_total_fcast", C.BUCKET]).assign(
@@ -85,5 +101,41 @@ def classify_tails(sold_df: pd.DataFrame) -> pd.DataFrame:
     logger.info(
         "Tail classification: %d (seller,dkp) pair(s) ranked across %d bucket(s).",
         len(badged), badged[C.BUCKET].nunique(),
+    )
+    return badged[[C.SELLER_KEY, C.DKP, C.TAIL_BADGE]]
+
+
+def classify_tails_per_seller(sold_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Same ABC/Pareto Item-Tail rule as classify_tails, but the ranking and
+    30%/70% cumulative cutoffs are computed independently for EACH SELLER's
+    own (bucket, dkp) totals, instead of across the whole marketplace: a
+    seller's own top 30% of their own forecasted sales volume is ST no
+    matter how that volume compares to any other seller's.
+
+    Args:
+        sold_df: same precondition as classify_tails (full, non-deduped,
+            `bucket` already assigned).
+
+    Returns:
+        DataFrame [seller_key, dkp, tail_badge] — one row per
+        (seller_key, dkp) pair whose SUMMED net_item_fcast is a positive,
+        non-NaN number. Pairs with a zero/entirely-NaN/blank total are
+        OMITTED entirely, same exclusion rule as classify_tails.
+    """
+    totals = _dkp_totals(sold_df)
+
+    if totals.empty:
+        return totals.drop(columns=["_total_fcast", C.BUCKET]).assign(
+            **{C.TAIL_BADGE: pd.Series(dtype=object)}
+        )
+
+    badged = pd.concat(
+        [_classify_within_bucket(group) for _, group in totals.groupby([C.SELLER_KEY, C.BUCKET], sort=False)],
+        ignore_index=True,
+    )
+    logger.info(
+        "Per-seller tail classification: %d (seller,dkp) pair(s) ranked across %d (seller,bucket) group(s).",
+        len(badged), badged.groupby([C.SELLER_KEY, C.BUCKET]).ngroups if len(badged) else 0,
     )
     return badged[[C.SELLER_KEY, C.DKP, C.TAIL_BADGE]]

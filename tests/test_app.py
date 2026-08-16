@@ -206,21 +206,67 @@ def test_download_seller_zip_404_for_unknown_result_id():
     assert response.status_code == 404
 
 
-def test_download_tail_seller_zip_400_when_not_generated():
+def test_calculate_response_includes_seller_tail_summary():
+    # Same fixture as test_calculate_response_includes_tail_summary_with_correct_counts,
+    # just asserting the standalone per-seller-ranked tab's field is populated too
+    # (its own classification math is covered in tests/test_tail_classifier.py).
+    sold_rows = [
+        {
+            "marketplace_seller_id": "S1", "marketplace_seller_name": "ACME",
+            "product_id": "D1", "product_variant_id": "D1C1",
+            "product_variant_name_fa": 1.0, "category_name_fa": "",
+            "sum_net_item_fcast": 30,
+        },
+        {
+            "marketplace_seller_id": "S1", "marketplace_seller_name": "ACME",
+            "product_id": "D_X", "product_variant_id": "D_XC1",
+            "product_variant_name_fa": 1.0, "category_name_fa": "",
+            "sum_net_item_fcast": 40,
+        },
+    ]
+    response = client.post(
+        "/api/v1/calculate",
+        files={
+            "live_file": ("Live_Data.xlsx", _live_bytes()),
+            "sold_file": ("Sold_Data.xlsx", _xlsx_bytes(pd.DataFrame(sold_rows))),
+        },
+        data={"tolerance_pct": 10},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["seller_tail_summary"]) == 1
+    row = body["seller_tail_summary"][0]
+    assert row["seller_id"] == "S1"
+    # D1 (30) + D_X (40) = 70 total for this seller alone; D_X (40) sorts first,
+    # cum=40/70=57.1% -> MT (ATP-unresolved live match doesn't matter here, only
+    # that the badge itself is computed against this seller's OWN 70 total, not
+    # the marketplace grand total used by tail_summary).
+    assert row["mt_available"] + row["mt_unavailable"] == 1
+
+    dl_summary = client.get(f"/api/v1/download/seller-tail-summary/{body['result_id']}")
+    assert dl_summary.status_code == 200
+    assert dl_summary.content
+
+    dl_list = client.get(f"/api/v1/download/seller-tail-dkp-list/{body['result_id']}")
+    assert dl_list.status_code == 200
+    assert dl_list.content
+
+
+def test_download_seller_tail_zip_400_when_not_generated():
     result_id = _calculate().json()["result_id"]
-    response = client.get(f"/api/v1/download/tail-seller-zip/{result_id}")
+    response = client.get(f"/api/v1/download/seller-tail-zip/{result_id}")
     assert response.status_code == 400
 
 
-def test_download_tail_seller_zip_returns_zip_when_generated():
-    result_id = _calculate(generate_tail_seller_zip=True).json()["result_id"]
-    response = client.get(f"/api/v1/download/tail-seller-zip/{result_id}")
+def test_download_seller_tail_zip_returns_zip_when_generated():
+    result_id = _calculate(generate_seller_tail_zip=True).json()["result_id"]
+    response = client.get(f"/api/v1/download/seller-tail-zip/{result_id}")
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/zip"
 
 
-def test_download_tail_seller_zip_404_for_unknown_result_id():
-    response = client.get("/api/v1/download/tail-seller-zip/does-not-exist")
+def test_download_seller_tail_zip_404_for_unknown_result_id():
+    response = client.get("/api/v1/download/seller-tail-zip/does-not-exist")
     assert response.status_code == 404
 
 

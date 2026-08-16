@@ -150,8 +150,10 @@ class _CacheEntry:
     missing_df: pd.DataFrame
     tail_summary_df: pd.DataFrame
     tail_dkp_list_df: pd.DataFrame
+    seller_tail_summary_df: pd.DataFrame
+    seller_tail_dkp_list_df: pd.DataFrame
     seller_zip_bytes: bytes | None = None
-    tail_seller_zip_bytes: bytes | None = None
+    seller_tail_zip_bytes: bytes | None = None
     created_at: float = field(default_factory=time.monotonic)
 
 
@@ -178,8 +180,10 @@ class ResultCache:
         missing_df: pd.DataFrame,
         tail_summary_df: pd.DataFrame,
         tail_dkp_list_df: pd.DataFrame,
+        seller_tail_summary_df: pd.DataFrame,
+        seller_tail_dkp_list_df: pd.DataFrame,
         seller_zip_bytes: bytes | None = None,
-        tail_seller_zip_bytes: bytes | None = None,
+        seller_tail_zip_bytes: bytes | None = None,
     ) -> str:
         result_id = uuid.uuid4().hex
         with self._lock:
@@ -192,8 +196,10 @@ class ResultCache:
                 missing_df=missing_df,
                 tail_summary_df=tail_summary_df,
                 tail_dkp_list_df=tail_dkp_list_df,
+                seller_tail_summary_df=seller_tail_summary_df,
+                seller_tail_dkp_list_df=seller_tail_dkp_list_df,
                 seller_zip_bytes=seller_zip_bytes,
-                tail_seller_zip_bytes=tail_seller_zip_bytes,
+                seller_tail_zip_bytes=seller_tail_zip_bytes,
             )
         return result_id
 

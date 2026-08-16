@@ -31,18 +31,25 @@ filtered every way a merchandising team would need.
   forecasted sales volume, marketplace-wide, computed **independently
   within each category bucket**, usable as a filter that affects the ATP
   percentages themselves.
+- 📮 **Per-seller Item-Tail classification** — the same ST/MT/LT rule, but
+  ranked independently for **each seller's own** volume instead of
+  marketplace-wide: a seller's own top 30% is ST regardless of how it
+  compares to any other seller.
 - 📄 Reads both `.xlsx` and `.csv` uploads, up to 500MB per file.
 
-**📤 What it can output (3 tabs in the UI):**
+**📤 What it can output (4 tabs in the UI):**
 - 📊 **Summary** — one row per seller: 4 ATP percentages (Bullion/Jewelry × DKPC/DKP). Color-coded 🔴🟡🟢 on screen and in the downloaded `.xlsx`.
 - 🔻 **Seller ATP Missing** — the full list of sold DKPCs that are NOT ATP, with category and bucket. Kept plain/uncolored on purpose, for easy reading of a raw list.
-- 🎯 **Category ST/MT/LT PER Seller** — three outputs in one tab:
+  - 📦 **Per-seller ZIP export (opt-in)** — one `SellerID-SellerName.xlsx` per
+    seller listing their unavailable items (weight, category, bucket, tail
+    badge included), ready to email straight to each seller.
+- 🎯 **Category ST/MT/LT PER Seller** — the marketplace-wide tail badge (above), two outputs in one tab:
   - an **overall table**: DKP counts per seller, per tail badge, split into available/unavailable (color-coded);
-  - an **item list**: every badged DKP across *all* sellers combined in a single flat `.xlsx` (color-coded by badge/status) — no per-seller split, just the raw list;
-  - a **per-seller ZIP export** (opt-in): the same badged-DKP item list, but split into one `SellerID-SellerName.xlsx` per seller instead of a single flat file.
-- 📦 **Per-seller ZIP export (ATP Missing, opt-in)** — one `SellerID-SellerName.xlsx` per
-  seller listing their unavailable items (weight, category, bucket, tail
-  badge included), ready to email straight to each seller.
+  - an **item list**: every badged DKP across *all* sellers combined in a single flat `.xlsx` (color-coded by badge/status) — no per-seller split, just the raw list.
+- 📮 **Per-Seller Item-Tail (its own standalone tab)** — the exact same two
+  outputs as above, but the badge comes from each seller's own ranking
+  instead of the marketplace-wide one:
+  - 📦 **Per-seller ZIP export** (opt-in): the item list above, split into one `SellerID-SellerName.xlsx` per seller instead of a single flat file.
 - 📋 **Downloadable templates** — example Live_Data/Sold_Data files with the correct headers, no guessing column names.
 - 🎨 Every colored table above is also colored the same way in its downloaded `.xlsx` file — not just on screen.
 
@@ -58,11 +65,11 @@ atp_analyzer/
 │   ├── weight_parser.py        extracts weight from "... | 0.65 گرم |"
 │   ├── excel_loader.py          reads & validates both Excel files
 │   ├── atp_engine.py           the ATP rule pipeline (the core)
-│   ├── tail_classifier.py      ST/MT/LT Item-Tail classification (ABC/Pareto)
+│   ├── tail_classifier.py      ST/MT/LT Item-Tail classification — both marketplace-wide and per-seller variants
 │   ├── summary_generator.py    builds the Summary table
 │   ├── missing_generator.py    builds the ATP_Missing table
-│   ├── tail_summary_generator.py builds the Category ST/MT/LT tables (overall counts, flat DKP list, per-seller ZIP)
-│   ├── seller_export.py        per-seller NOT-ATP ZIP export
+│   ├── tail_summary_generator.py builds the overall table, flat DKP list, and per-seller ZIP for BOTH tail tabs
+│   ├── seller_export.py        per-seller NOT-ATP ZIP export (ATP Missing tab)
 │   └── templates.py            downloadable example Live_Data/Sold_Data templates
 ├── frontend/
 │   └── streamlit_app.py        upload UI, filters, results, downloads
@@ -157,7 +164,7 @@ Sold_Data file via `POST /api/v1/sold-data/categories` to populate a
 picker before running the calculation. Any category not explicitly marked
 Bullion (including blank/missing categories) is treated as Jewelry.
 
-## 🎯 Item-Tail classification (ST/MT/LT)
+## 🎯 Item-Tail classification (ST/MT/LT) — marketplace-wide
 
 Every sold DKP is ranked **marketplace-wide** (across every seller
 combined, not per seller) by its total `sum_net_item_fcast` — but
@@ -175,6 +182,28 @@ badge at all** (they're excluded from the ranking, not defaulted to LT).
 Summary percentages too, not just
 which rows are displayed.
 
+This is the variant that feeds the **"Category ST/MT/LT PER Seller"** tab
+(`backend/tail_classifier.py::classify_tails`).
+
+## 📮 Item-Tail classification (ST/MT/LT) — per seller
+
+A second, entirely independent classification
+(`backend/tail_classifier.py::classify_tails_per_seller`): the exact same
+ABC/Pareto rule (top 30% cumulative = ST, next 40% = MT, remaining 30% =
+LT), but ranked **separately for each seller's own** (bucket, DKP) totals
+instead of the marketplace grand total — a seller's own top 30% of their
+own forecasted volume is ST no matter how small or large that seller is
+relative to everyone else. Big and small sellers never affect each
+other's cutoffs here, unlike the marketplace-wide variant above.
+
+This ranking is always computed on the full bucketed Sold_Data (after the
+Bullion/Jewelry split, but *before* the `tail_badges` filter above is
+applied) — a seller's own Pareto curve has to reflect their true sales
+mix, not an already-narrowed subset. It feeds the standalone **"Per-Seller
+Item-Tail"** tab. The same DKP can therefore carry a *different* badge in
+each of the two tail tabs — that's expected, not a bug (see *Known
+assumptions* below).
+
 ## 📦 Per-seller missing-items ZIP export
 
 Set `generate_seller_zip=true` on `/calculate` to also build a ZIP
@@ -187,9 +216,10 @@ emailing each seller their own actionable list. It's opt-in and only
 built when requested, since it's extra work on top of the normal
 Summary/Missing calculation.
 
-## 🎯 Category ST/MT/LT per Seller (three outputs, one tab)
+## 🎯 Category ST/MT/LT per Seller (two outputs, one tab — marketplace-wide badge)
 
-The third UI tab (**"🎯 Category ST/MT/LT PER Seller"**) has three independent outputs:
+The third UI tab (**"🎯 Category ST/MT/LT PER Seller"**) has two independent
+outputs, both built on the **marketplace-wide** tail badge:
 
 1. **Overall table** — `tail_summary` response field / `GET
    /api/v1/download/tail-summary/{result_id}` (`Tail_Summary.xlsx`). Per
@@ -202,29 +232,41 @@ The third UI tab (**"🎯 Category ST/MT/LT PER Seller"**) has three independent
 2. **Item list** — `GET /api/v1/download/tail-dkp-list/{result_id}`
    (`Tail_DKP_List.xlsx`). Every badged DKP across **all** sellers
    combined, in one flat file — Seller ID, Seller, DKP, Category, Bucket,
-   Tail Badge, Status (Available/Unavailable). Not split per seller (use
-   the per-seller ZIP export below if you need a per-seller split
-   instead).
-3. **Per-seller ZIP export** (opt-in) — set `generate_tail_seller_zip=true`
+   Tail Badge, Status (Available/Unavailable). Not split per seller.
+
+## 📮 Per-Seller Item-Tail (its own standalone tab — per-seller badge)
+
+A fourth, separate UI tab (**"📮 Per-Seller Item-Tail"**) — not a
+sub-section of the tab above — mirrors the exact same two outputs, but
+built on the **per-seller** tail badge (`classify_tails_per_seller`)
+instead of the marketplace-wide one, plus a third, opt-in output:
+
+1. **Overall table** — `seller_tail_summary` response field / `GET
+   /api/v1/download/seller-tail-summary/{result_id}`
+   (`Seller_Tail_Summary.xlsx`). Identical shape to the marketplace-wide
+   overall table above, just counting each seller's own-ranked badges.
+2. **Item list** — `GET /api/v1/download/seller-tail-dkp-list/{result_id}`
+   (`Seller_Tail_DKP_List.xlsx`). Same columns as the marketplace-wide
+   item list, one flat file across all sellers, not split per seller.
+3. **Per-seller ZIP export** (opt-in) — set `generate_seller_tail_zip=true`
    on `/calculate` to also build a ZIP (downloaded via `GET
-   /api/v1/download/tail-seller-zip/{result_id}`,
-   `Tail_DKP_List_by_Seller.zip`) containing one `SellerID-SellerName.xlsx`
-   per seller with at least one badged DKP — the exact same rows and
-   columns as the item list above (Seller ID, Seller, DKP, Category,
-   Bucket, Tail Badge, Status), just split one file per seller instead of
-   a single combined sheet. Sellers with no badged DKPs get no file. It's
-   opt-in and only built when requested, same as the ATP Missing ZIP
-   export above.
+   /api/v1/download/seller-tail-zip/{result_id}`,
+   `Seller_Tail_DKP_List_by_Seller.zip`) containing one
+   `SellerID-SellerName.xlsx` per seller with at least one badged DKP —
+   the exact same rows and columns as the item list above, just split one
+   file per seller instead of a single combined sheet. Sellers with no
+   badged DKPs get no file. It's opt-in and only built when requested,
+   same as the ATP Missing ZIP export above.
 
 ## 🎨 Colored outputs
 
-The Summary tab/file and the Category ST/MT/LT overall table/file use a
-🔴🟡🟢 red→yellow→green color scale (same visual language on screen and
-in the downloaded `.xlsx`, via openpyxl conditional formatting). The
-Category ST/MT/LT item-list file uses solid categorical colors instead
-(ST=green, MT=yellow, LT=red; Available=green, Unavailable=red). **Seller
-ATP Missing is deliberately left uncolored** — it's meant to be read as a
-plain, scannable raw list.
+The Summary tab/file and both tail tabs' overall tables/files (Category
+ST/MT/LT and Per-Seller Item-Tail) use a 🔴🟡🟢 red→yellow→green color
+scale (same visual language on screen and in the downloaded `.xlsx`, via
+openpyxl conditional formatting). Both tail tabs' item-list files use
+solid categorical colors instead (ST=green, MT=yellow, LT=red;
+Available=green, Unavailable=red). **Seller ATP Missing is deliberately
+left uncolored** — it's meant to be read as a plain, scannable raw list.
 
 ## 🚀 Performance
 
@@ -331,6 +373,11 @@ same `put()`/`get()` interface — nothing else needs to change.
 - Rows with a zero or blank `sum_net_item_fcast` are excluded entirely
   from Item-Tail ranking (no badge at all, not defaulted to LT) and from
   the per-seller ZIP export — they're not merely sorted last.
+- The marketplace-wide tail badge (Category ST/MT/LT tab) and the
+  per-seller tail badge (Per-Seller Item-Tail tab) are two fully
+  independent calculations — the same DKP can legitimately carry a
+  different badge in each tab, since one compares it to the whole
+  marketplace and the other only to that seller's own sales mix.
 - The frontend's Bullion-labels picker defaults to pre-selecting
   `شمش طلا`, `پک شمش و پلاک طلا`, `سکه و شمش نقره`, and
   `سکه پارسیان (گرمی)` whenever they appear in the uploaded Sold_Data's

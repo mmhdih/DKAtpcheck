@@ -5,7 +5,7 @@ import pytest
 from backend.config import CanonicalColumns as C
 from backend.config import CategoryBucket
 from backend.config import TailClassification
-from backend.tail_classifier import classify_tails
+from backend.tail_classifier import classify_tails, classify_tails_per_seller
 
 
 def _sold_totals(
@@ -123,5 +123,87 @@ def test_returns_seller_dkp_granularity_not_dkpc():
 def test_empty_input_returns_empty_frame():
     sold = _sold_totals([])
     result = classify_tails(sold)
+    assert result.empty
+    assert set(result.columns) == {C.SELLER_KEY, C.DKP, C.TAIL_BADGE}
+
+
+# --------------------------------------------------------------------------- #
+# classify_tails_per_seller — same rule, ranked within each seller's own
+# totals instead of the marketplace-wide grand total.
+# --------------------------------------------------------------------------- #
+def test_ranking_is_independent_per_seller():
+    # Same shape as test_ranking_is_global_across_all_sellers above, but
+    # this time each seller's OWN volume is the only thing that matters:
+    # seller "a" and seller "b" are perfectly symmetric within their own
+    # totals (a: 1+99=100, b: 1+99=100), so their dominant DKPs must land
+    # on the IDENTICAL badge — unlike classify_tails, where seller "a"'s
+    # DKP2 lands on MT (49.5% of the combined 200 total) while seller
+    # "b"'s DKP4 lands on LT (99% of that same shared curve), because
+    # there the denominator is the marketplace grand total, not each
+    # seller's own.
+    sold = _sold_totals(
+        [
+            ("a", "D1", 1.0),
+            ("a", "D2", 99.0),
+            ("b", "D3", 1.0),
+            ("b", "D4", 99.0),
+        ]
+    )
+    result = classify_tails_per_seller(sold)
+    assert _badge_for(result, "a", "D2") == _badge_for(result, "b", "D4")
+
+
+def test_within_seller_cutoffs_still_use_30_70_bands():
+    # Mirrors test_st_cutoff_is_inclusive_at_30 — proves the same 30/70
+    # cumulative rule applies, just against this seller's own denominator.
+    sold = _sold_totals([("s", "D1", 30.0), ("s", "D2", 25.0), ("s", "D3", 25.0), ("s", "D4", 20.0)])
+    result = classify_tails_per_seller(sold)
+    assert _badge_for(result, "s", "D1") == TailClassification.ST
+
+
+def test_ranking_is_independent_per_bucket_within_seller():
+    # Bullion's volume must have no effect on how this seller's Jewelry
+    # DKPs rank against each other — same guarantee as classify_tails,
+    # just scoped within one seller.
+    bullion = _sold_totals(
+        [("s", "D_BULLION", 25.0), ("s", "DB2", 20.0), ("s", "DB3", 20.0), ("s", "DB4", 20.0), ("s", "DB5", 15.0)],
+        bucket=CategoryBucket.BULLION,
+    )
+    jewelry = _sold_totals(
+        [("s", "D1", 30.0), ("s", "D2", 40.0), ("s", "D3", 30.0)], bucket=CategoryBucket.JEWELRY
+    )
+    sold = pd.concat([bullion, jewelry], ignore_index=True)
+    result = classify_tails_per_seller(sold)
+
+    assert _badge_for(result, "s", "D_BULLION") == TailClassification.ST
+    assert _badge_for(result, "s", "D2") == TailClassification.MT
+    assert _badge_for(result, "s", "D1") == TailClassification.MT
+    assert _badge_for(result, "s", "D3") == TailClassification.LT
+
+
+def test_per_seller_zero_or_all_nan_net_item_fcast_pairs_are_excluded_entirely():
+    sold = _sold_totals(
+        [
+            ("s", "D_ZERO", 0.0),
+            ("s", "D_NAN", np.nan),
+            ("s", "D_REAL", 10.0),
+        ]
+    )
+    result = classify_tails_per_seller(sold)
+    assert _badge_for(result, "s", "D_ZERO") is None
+    assert _badge_for(result, "s", "D_NAN") is None
+    assert _badge_for(result, "s", "D_REAL") is not None
+
+
+def test_per_seller_returns_seller_dkp_granularity_not_dkpc():
+    sold = _sold_totals([("s", "D1", 10.0), ("s", "D1", 20.0)])
+    result = classify_tails_per_seller(sold)
+    assert len(result) == 1
+    assert set(result.columns) == {C.SELLER_KEY, C.DKP, C.TAIL_BADGE}
+
+
+def test_per_seller_empty_input_returns_empty_frame():
+    sold = _sold_totals([])
+    result = classify_tails_per_seller(sold)
     assert result.empty
     assert set(result.columns) == {C.SELLER_KEY, C.DKP, C.TAIL_BADGE}

@@ -191,7 +191,9 @@ tail_badges = st.multiselect(
     options=TAIL_BADGE_OPTIONS, default=TAIL_BADGE_OPTIONS,
 )
 generate_seller_zip = st.checkbox("Also generate the per-seller missing-items ZIP export (for emailing to sellers)")
-generate_tail_seller_zip = st.checkbox("Also generate the per-seller ST/MT/LT Item-Tail ZIP export (one xlsx per seller)")
+generate_seller_tail_zip = st.checkbox(
+    "Also generate the per-seller ZIP export of the Per-Seller Item-Tail tab (one xlsx per seller)"
+)
 st.markdown("</div>", unsafe_allow_html=True)
 
 run_clicked = st.button("▶ Run calculation", type="primary", use_container_width=True)
@@ -217,7 +219,7 @@ if run_clicked:
                     "bullion_categories": bullion_categories,
                     "tail_badges": tail_badges,
                     "generate_seller_zip": generate_seller_zip,
-                    "generate_tail_seller_zip": generate_tail_seller_zip,
+                    "generate_seller_tail_zip": generate_seller_tail_zip,
                 },
                 timeout=300,
             )
@@ -266,8 +268,8 @@ if result:
         "DKPC ATP % (Jewelry)", "DKP ATP % (Jewelry)",
     ]
 
-    tab_summary, tab_missing, tab_tail = st.tabs(
-        ["📊 Summary", "🔻 Seller ATP Missing", "🎯 Category ST/MT/LT PER Seller"]
+    tab_summary, tab_missing, tab_tail, tab_seller_tail = st.tabs(
+        ["📊 Summary", "🔻 Seller ATP Missing", "🎯 Category ST/MT/LT PER Seller", "📮 Per-Seller Item-Tail"]
     )
 
     with tab_summary:
@@ -372,16 +374,66 @@ if result:
                 use_container_width=True,
             )
 
-            if meta.get("tail_seller_zip_generated"):
+    with tab_seller_tail:
+        st.caption(
+            "Same ST/MT/LT rule as the tab above, but ranked separately for **each seller's own** "
+            "sold volume instead of marketplace-wide — a seller's own top 30% is ST regardless of "
+            "how it compares to other sellers."
+        )
+        seller_tail_summary_df = pd.DataFrame(result["seller_tail_summary"]).rename(
+            columns={
+                "seller_id": "Seller ID", "seller": "Seller",
+                "st_available": "ST Available", "st_unavailable": "ST Unavailable",
+                "mt_available": "MT Available", "mt_unavailable": "MT Unavailable",
+                "lt_available": "LT Available", "lt_unavailable": "LT Unavailable",
+            }
+        )
+        if seller_tail_summary_df.empty:
+            st.info("No sold DKP has a resolvable Item-Tail badge (sum_net_item_fcast is zero/blank for all).")
+        else:
+            st.caption("📋 Overall table — DKP counts per seller, per own-ranked Item-Tail badge, split by ATP status.")
+            styled_seller_tail_summary = seller_tail_summary_df.style
+            if _MATPLOTLIB_AVAILABLE:
+                styled_seller_tail_summary = styled_seller_tail_summary.background_gradient(
+                    subset=tail_count_columns, cmap="RdYlGn"
+                )
+            else:
+                st.caption("Install matplotlib to enable colored cell shading in this table.")
+            st.dataframe(styled_seller_tail_summary, use_container_width=True, hide_index=True)
+            dl_seller_tail_summary = requests.get(
+                f"{API}/download/seller-tail-summary/{result['result_id']}", timeout=60
+            )
+            st.download_button(
+                "⬇ Download Seller_Tail_Summary.xlsx (overall table)",
+                data=dl_seller_tail_summary.content,
+                file_name="Seller_Tail_Summary.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+
+            st.divider()
+            st.caption("📦 Item list — every badged DKP across all sellers, in one flat file (not split per seller).")
+            dl_seller_tail_dkp_list = requests.get(
+                f"{API}/download/seller-tail-dkp-list/{result['result_id']}", timeout=60
+            )
+            st.download_button(
+                "⬇ Download Seller_Tail_DKP_List.xlsx (item list)",
+                data=dl_seller_tail_dkp_list.content,
+                file_name="Seller_Tail_DKP_List.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+
+            if meta.get("seller_tail_zip_generated"):
                 st.divider()
                 st.caption("📮 Per-seller ZIP — same badged DKPs, split into one xlsx per seller (SellerID-SellerName.xlsx).")
-                dl_tail_seller_zip = requests.get(
-                    f"{API}/download/tail-seller-zip/{result['result_id']}", timeout=60
+                dl_seller_tail_zip = requests.get(
+                    f"{API}/download/seller-tail-zip/{result['result_id']}", timeout=60
                 )
                 st.download_button(
-                    "⬇ Download Tail_DKP_List_by_Seller.zip (per-seller)",
-                    data=dl_tail_seller_zip.content,
-                    file_name="Tail_DKP_List_by_Seller.zip",
+                    "⬇ Download Seller_Tail_DKP_List_by_Seller.zip (per-seller)",
+                    data=dl_seller_tail_zip.content,
+                    file_name="Seller_Tail_DKP_List_by_Seller.zip",
                     mime="application/zip",
                     use_container_width=True,
                 )
