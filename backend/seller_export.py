@@ -13,14 +13,13 @@ Reuses utils.dataframe_to_excel_bytes for the actual xlsx styling.
 from __future__ import annotations
 
 import io
-import re
 import zipfile
 
 import pandas as pd
 
 from .atp_engine import ATPResult
 from .config import CanonicalColumns as C
-from .utils import dataframe_to_excel_bytes, get_logger
+from .utils import dataframe_to_excel_bytes, get_logger, safe_filename_part
 
 logger = get_logger(__name__)
 
@@ -32,19 +31,6 @@ WEIGHT_COLUMN = "Weight"
 CATEGORY_COLUMN = "Category"
 BUCKET_COLUMN = "Bucket"
 TAIL_BADGE_COLUMN = "Tail Badge"
-
-# Characters genuinely unsafe in a filename across Windows/Linux/macOS:
-# path separators, Windows-reserved punctuation, and control characters.
-# Everything else — including non-ASCII scripts like Persian/Arabic — is
-# left untouched, so seller names stay human-readable in the exported
-# filenames (an earlier ASCII-only allowlist here collapsed every
-# non-Latin seller name, e.g. "آذر نقره", down to a bare "unknown").
-_FILENAME_UNSAFE_RE = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')
-
-
-def _safe_filename_part(value: str) -> str:
-    text = _FILENAME_UNSAFE_RE.sub("_", str(value)).strip("_. ")
-    return text or "unknown"
 
 
 def build_seller_missing_zip(result: ATPResult) -> bytes:
@@ -82,7 +68,7 @@ def build_seller_missing_zip(result: ATPResult) -> bytes:
                 }
             )
             xlsx_bytes = dataframe_to_excel_bytes(sheet, sheet_name="ATP_Missing")
-            filename = f"{_safe_filename_part(seller_id)}-{_safe_filename_part(seller_name)}.xlsx"
+            filename = f"{safe_filename_part(seller_id)}-{safe_filename_part(seller_name)}.xlsx"
             zf.writestr(filename, xlsx_bytes)
             seller_count += 1
 

@@ -36,10 +36,11 @@ filtered every way a merchandising team would need.
 **📤 What it can output (3 tabs in the UI):**
 - 📊 **Summary** — one row per seller: 4 ATP percentages (Bullion/Jewelry × DKPC/DKP). Color-coded 🔴🟡🟢 on screen and in the downloaded `.xlsx`.
 - 🔻 **Seller ATP Missing** — the full list of sold DKPCs that are NOT ATP, with category and bucket. Kept plain/uncolored on purpose, for easy reading of a raw list.
-- 🎯 **Category ST/MT/LT PER Seller** — two outputs in one tab:
+- 🎯 **Category ST/MT/LT PER Seller** — three outputs in one tab:
   - an **overall table**: DKP counts per seller, per tail badge, split into available/unavailable (color-coded);
-  - an **item list**: every badged DKP across *all* sellers combined in a single flat `.xlsx` (color-coded by badge/status) — no per-seller split, just the raw list.
-- 📦 **Per-seller ZIP export** (opt-in) — one `SellerID-SellerName.xlsx` per
+  - an **item list**: every badged DKP across *all* sellers combined in a single flat `.xlsx` (color-coded by badge/status) — no per-seller split, just the raw list;
+  - a **per-seller ZIP export** (opt-in): the same badged-DKP item list, but split into one `SellerID-SellerName.xlsx` per seller instead of a single flat file.
+- 📦 **Per-seller ZIP export (ATP Missing, opt-in)** — one `SellerID-SellerName.xlsx` per
   seller listing their unavailable items (weight, category, bucket, tail
   badge included), ready to email straight to each seller.
 - 📋 **Downloadable templates** — example Live_Data/Sold_Data files with the correct headers, no guessing column names.
@@ -60,7 +61,7 @@ atp_analyzer/
 │   ├── tail_classifier.py      ST/MT/LT Item-Tail classification (ABC/Pareto)
 │   ├── summary_generator.py    builds the Summary table
 │   ├── missing_generator.py    builds the ATP_Missing table
-│   ├── tail_summary_generator.py builds the Category ST/MT/LT tables (overall counts + flat DKP list)
+│   ├── tail_summary_generator.py builds the Category ST/MT/LT tables (overall counts, flat DKP list, per-seller ZIP)
 │   ├── seller_export.py        per-seller NOT-ATP ZIP export
 │   └── templates.py            downloadable example Live_Data/Sold_Data templates
 ├── frontend/
@@ -186,9 +187,9 @@ emailing each seller their own actionable list. It's opt-in and only
 built when requested, since it's extra work on top of the normal
 Summary/Missing calculation.
 
-## 🎯 Category ST/MT/LT per Seller (two outputs, one tab)
+## 🎯 Category ST/MT/LT per Seller (three outputs, one tab)
 
-The third UI tab (**"🎯 Category ST/MT/LT PER Seller"**) has two independent outputs:
+The third UI tab (**"🎯 Category ST/MT/LT PER Seller"**) has three independent outputs:
 
 1. **Overall table** — `tail_summary` response field / `GET
    /api/v1/download/tail-summary/{result_id}` (`Tail_Summary.xlsx`). Per
@@ -202,7 +203,18 @@ The third UI tab (**"🎯 Category ST/MT/LT PER Seller"**) has two independent o
    (`Tail_DKP_List.xlsx`). Every badged DKP across **all** sellers
    combined, in one flat file — Seller ID, Seller, DKP, Category, Bucket,
    Tail Badge, Status (Available/Unavailable). Not split per seller (use
-   the ZIP export above if you need a per-seller split instead).
+   the per-seller ZIP export below if you need a per-seller split
+   instead).
+3. **Per-seller ZIP export** (opt-in) — set `generate_tail_seller_zip=true`
+   on `/calculate` to also build a ZIP (downloaded via `GET
+   /api/v1/download/tail-seller-zip/{result_id}`,
+   `Tail_DKP_List_by_Seller.zip`) containing one `SellerID-SellerName.xlsx`
+   per seller with at least one badged DKP — the exact same rows and
+   columns as the item list above (Seller ID, Seller, DKP, Category,
+   Bucket, Tail Badge, Status), just split one file per seller instead of
+   a single combined sheet. Sellers with no badged DKPs get no file. It's
+   opt-in and only built when requested, same as the ATP Missing ZIP
+   export above.
 
 ## 🎨 Colored outputs
 

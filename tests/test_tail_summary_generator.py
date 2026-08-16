@@ -1,10 +1,13 @@
+import io
+import zipfile
+
 import pandas as pd
 import pytest
 
 from backend.atp_engine import ATPResult
 from backend.config import CanonicalColumns as C
 from backend.config import CategoryBucket, TailClassification
-from backend.tail_summary_generator import build_tail_dkp_list, build_tail_summary
+from backend.tail_summary_generator import build_tail_dkp_list, build_tail_dkp_zip, build_tail_summary
 
 
 def _dkp_row(seller_id, seller, badge, is_atp, **overrides) -> dict:
@@ -136,3 +139,65 @@ def test_dkp_list_empty_result_returns_expected_columns():
     assert list(listing.columns) == [
         "Seller ID", "Seller", "DKP", "Category", "Bucket", "Tail Badge", "Status",
     ]
+
+
+def _read_zip_sheets(zip_bytes: bytes) -> dict[str, pd.DataFrame]:
+    sheets = {}
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        for name in zf.namelist():
+            sheets[name] = pd.read_excel(io.BytesIO(zf.read(name)))
+    return sheets
+
+
+def test_dkp_zip_contains_one_file_per_seller_id():
+    rows = [
+        _dkp_row("S1", "ACME", TailClassification.ST, True, **{C.DKP: "D1"}),
+        _dkp_row("S2", "Beta", TailClassification.MT, False, **{C.DKP: "D2"}),
+    ]
+    zip_bytes = build_tail_dkp_zip(_result(rows))
+    sheets = _read_zip_sheets(zip_bytes)
+    assert len(sheets) == 2
+
+
+def test_dkp_zip_filename_uses_seller_id_dash_seller_name_format():
+    rows = [_dkp_row("42", "ACME", TailClassification.ST, True, **{C.DKP: "D1"})]
+    zip_bytes = build_tail_dkp_zip(_result(rows))
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        names = zf.namelist()
+    assert names == ["42-ACME.xlsx"]
+
+
+def test_dkp_zip_sheet_matches_flat_listing_columns_for_that_seller():
+    rows = [
+        _dkp_row("S1", "ACME", TailClassification.ST, True, **{C.DKP: "D1"}),
+        _dkp_row("S1", "ACME", TailClassification.LT, False, **{C.DKP: "D2"}),
+        _dkp_row("S2", "Beta", TailClassification.MT, False, **{C.DKP: "D3"}),
+    ]
+    result = _result(rows)
+    zip_bytes = build_tail_dkp_zip(result)
+    sheets = _read_zip_sheets(zip_bytes)
+
+    seller_1_sheet = next(v for k, v in sheets.items() if k.startswith("S1-"))
+    assert list(seller_1_sheet.columns) == [
+        "Seller ID", "Seller", "DKP", "Category", "Bucket", "Tail Badge", "Status",
+    ]
+    assert set(seller_1_sheet["DKP"]) == {"D1", "D2"}
+    assert set(seller_1_sheet["Seller ID"]) == {"S1"}
+
+
+def test_dkp_zip_excludes_unbadged_dkps_and_sellers_with_none():
+    rows = [
+        _dkp_row("S1", "ACME", TailClassification.ST, True, **{C.DKP: "D1"}),
+        _dkp_row("S2", "Beta", None, True, **{C.DKP: "D2"}),
+    ]
+    zip_bytes = build_tail_dkp_zip(_result(rows))
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        names = zf.namelist()
+    assert len(names) == 1
+    assert names[0].startswith("S1-")
+
+
+def test_dkp_zip_empty_result_returns_empty_zip():
+    zip_bytes = build_tail_dkp_zip(_result([]))
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        assert zf.namelist() == []

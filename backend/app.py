@@ -13,6 +13,7 @@ Endpoints:
     GET  /api/v1/download/tail-summary/{result_id}  Tail_Summary.xlsx
     GET  /api/v1/download/tail-dkp-list/{result_id} Tail_DKP_List.xlsx
     GET  /api/v1/download/seller-zip/{result_id}    ATP_Missing_by_Seller.zip (opt-in)
+    GET  /api/v1/download/tail-seller-zip/{result_id} Tail_DKP_List_by_Seller.zip (opt-in)
     GET  /api/v1/templates/live-data            Live_Data_Template.xlsx
     GET  /api/v1/templates/sold-data            Sold_Data_Template.xlsx
 
@@ -48,6 +49,7 @@ from .summary_generator import build_summary, summary_to_excel_bytes
 from .tail_classifier import classify_tails
 from .tail_summary_generator import (
     build_tail_dkp_list,
+    build_tail_dkp_zip,
     build_tail_summary,
     tail_dkp_list_to_excel_bytes,
     tail_summary_to_excel_bytes,
@@ -139,6 +141,9 @@ async def calculate(
         description="Which ST/MT/LT Item-Tail badges to include",
     ),
     generate_seller_zip: bool = Form(False, description="Also build the per-seller NOT-ATP ZIP export"),
+    generate_tail_seller_zip: bool = Form(
+        False, description="Also build the per-seller ST/MT/LT Item-Tail ZIP export"
+    ),
 ) -> CalculationResponse:
     if tolerance_pct > 100:
         raise HTTPException(status_code=400, detail="tolerance_pct above 100 is almost certainly a mistake.")
@@ -190,6 +195,7 @@ async def calculate(
         tail_dkp_list_df = build_tail_dkp_list(atp_result)
 
         seller_zip_bytes = build_seller_missing_zip(atp_result) if generate_seller_zip else None
+        tail_seller_zip_bytes = build_tail_dkp_zip(atp_result) if generate_tail_seller_zip else None
 
     result_id = _cache.put(
         summary_df=summary_df,
@@ -197,6 +203,7 @@ async def calculate(
         tail_summary_df=tail_summary_df,
         tail_dkp_list_df=tail_dkp_list_df,
         seller_zip_bytes=seller_zip_bytes,
+        tail_seller_zip_bytes=tail_seller_zip_bytes,
     )
 
     warnings = live_result.warnings + sold_result.warnings
@@ -211,6 +218,7 @@ async def calculate(
         bullion_categories_selected=bullion_categories,
         tail_badges_selected=sorted(selected_badges),
         seller_zip_generated=seller_zip_bytes is not None,
+        tail_seller_zip_generated=tail_seller_zip_bytes is not None,
         execution_seconds=round(t["seconds"], 3),
         warnings=warnings,
     )
@@ -336,6 +344,24 @@ def download_seller_zip(result_id: str) -> StreamingResponse:
         io.BytesIO(entry.seller_zip_bytes),
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=ATP_Missing_by_Seller.zip"},
+    )
+
+
+@app.get(f"{settings.api_v1_prefix}/download/tail-seller-zip/{{result_id}}")
+def download_tail_seller_zip(result_id: str) -> StreamingResponse:
+    entry = _get_cache_entry_or_404(result_id)
+    if entry.tail_seller_zip_bytes is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Tail-by-seller ZIP export was not generated for this result. "
+                "Re-run the calculation with 'generate_tail_seller_zip' enabled."
+            ),
+        )
+    return StreamingResponse(
+        io.BytesIO(entry.tail_seller_zip_bytes),
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=Tail_DKP_List_by_Seller.zip"},
     )
 
 

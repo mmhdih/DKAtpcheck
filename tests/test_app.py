@@ -206,6 +206,24 @@ def test_download_seller_zip_404_for_unknown_result_id():
     assert response.status_code == 404
 
 
+def test_download_tail_seller_zip_400_when_not_generated():
+    result_id = _calculate().json()["result_id"]
+    response = client.get(f"/api/v1/download/tail-seller-zip/{result_id}")
+    assert response.status_code == 400
+
+
+def test_download_tail_seller_zip_returns_zip_when_generated():
+    result_id = _calculate(generate_tail_seller_zip=True).json()["result_id"]
+    response = client.get(f"/api/v1/download/tail-seller-zip/{result_id}")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+
+
+def test_download_tail_seller_zip_404_for_unknown_result_id():
+    response = client.get("/api/v1/download/tail-seller-zip/does-not-exist")
+    assert response.status_code == 404
+
+
 def test_templates_endpoints_return_xlsx():
     for path in ("/api/v1/templates/live-data", "/api/v1/templates/sold-data"):
         response = client.get(path)

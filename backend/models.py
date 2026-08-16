@@ -56,6 +56,9 @@ class CalculationRequest(BaseModel):
     generate_seller_zip: bool = Field(
         False, description="Also build the per-seller NOT-ATP ZIP export."
     )
+    generate_tail_seller_zip: bool = Field(
+        False, description="Also build the per-seller ST/MT/LT Item-Tail ZIP export."
+    )
 
     @field_validator("tolerance_pct")
     @classmethod
@@ -119,6 +122,7 @@ class CalculationMeta(BaseModel):
     bullion_categories_selected: list[str] = Field(default_factory=list)
     tail_badges_selected: list[str] = Field(default_factory=lambda: list(TailClassification.ALL))
     seller_zip_generated: bool = False
+    tail_seller_zip_generated: bool = False
     execution_seconds: float
     warnings: list[str] = Field(default_factory=list)
 
