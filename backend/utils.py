@@ -29,6 +29,22 @@ from openpyxl.utils import get_column_letter
 from .config import get_settings
 
 # --------------------------------------------------------------------------- #
+# Filename sanitization
+# --------------------------------------------------------------------------- #
+# Characters genuinely unsafe in a filename across Windows/Linux/macOS: path
+# separators, Windows-reserved punctuation, and control characters.
+# Everything else — including non-ASCII scripts like Persian/Arabic — is left
+# untouched, so seller names stay human-readable in exported filenames (an
+# earlier ASCII-only allowlist collapsed every non-Latin seller name, e.g.
+# "آذر نقره", down to a bare "unknown").
+_FILENAME_UNSAFE_RE = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')
+
+
+def safe_filename_part(value: Any) -> str:
+    text = _FILENAME_UNSAFE_RE.sub("_", str(value)).strip("_. ")
+    return text or "unknown"
+
+# --------------------------------------------------------------------------- #
 # Logging
 # --------------------------------------------------------------------------- #
 def get_logger(name: str) -> logging.Logger:
@@ -135,6 +151,7 @@ class _CacheEntry:
     tail_summary_df: pd.DataFrame
     tail_dkp_list_df: pd.DataFrame
     seller_zip_bytes: bytes | None = None
+    tail_seller_zip_bytes: bytes | None = None
     created_at: float = field(default_factory=time.monotonic)
 
 
@@ -162,6 +179,7 @@ class ResultCache:
         tail_summary_df: pd.DataFrame,
         tail_dkp_list_df: pd.DataFrame,
         seller_zip_bytes: bytes | None = None,
+        tail_seller_zip_bytes: bytes | None = None,
     ) -> str:
         result_id = uuid.uuid4().hex
         with self._lock:
@@ -175,6 +193,7 @@ class ResultCache:
                 tail_summary_df=tail_summary_df,
                 tail_dkp_list_df=tail_dkp_list_df,
                 seller_zip_bytes=seller_zip_bytes,
+                tail_seller_zip_bytes=tail_seller_zip_bytes,
             )
         return result_id
 

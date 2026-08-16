@@ -15,8 +15,17 @@ DKP-level concept (all DKPCs under one DKP share the same badge), so
 DKP-level ATP (weight-independent) is the natural status to report here.
 DKPs with no badge at all (zero/blank sum_net_item_fcast) are excluded
 from both, consistent with how they're excluded from ranking.
+
+A third output, build_tail_dkp_zip, re-splits build_tail_dkp_list's flat
+listing per seller — one styled .xlsx per Seller ID, named
+"<SellerID>-<SellerName>.xlsx" (same convention as seller_export.py's
+NOT-ATP ZIP) — for teams that want the ST/MT/LT breakdown as a standalone
+per-seller hand-off file instead of one combined sheet.
 """
 from __future__ import annotations
+
+import io
+import zipfile
 
 import numpy as np
 import pandas as pd
@@ -24,7 +33,7 @@ import pandas as pd
 from .atp_engine import ATPResult
 from .config import CanonicalColumns as C
 from .config import TailClassification
-from .utils import dataframe_to_excel_bytes, get_logger
+from .utils import dataframe_to_excel_bytes, get_logger, safe_filename_part
 
 logger = get_logger(__name__)
 
@@ -152,3 +161,40 @@ def tail_dkp_list_to_excel_bytes(tail_dkp_list_df: pd.DataFrame) -> bytes:
             STATUS_COLUMN: _STATUS_COLORS,
         },
     )
+
+
+def build_tail_dkp_zip(result: ATPResult) -> bytes:
+    """
+    Same badged-DKP rows as build_tail_dkp_list, but split into one styled
+    .xlsx per Seller ID instead of a single combined sheet.
+
+    Returns:
+        Raw .zip bytes containing one "<SellerID>-<SellerName>.xlsx" per
+        seller with at least one badged DKP, each sheet listing that
+        seller's Seller ID, Seller, DKP, Category, Bucket, Tail Badge and
+        Status (Available/Unavailable) rows, sorted by DKP. Sellers with
+        no badged DKPs at all (same exclusion rule as build_tail_dkp_list)
+        get no file.
+    """
+    listing = build_tail_dkp_list(result)
+
+    buffer = io.BytesIO()
+    seller_count = 0
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for seller_id, group in listing.groupby(SELLER_ID_COLUMN, sort=True):
+            seller_name = group[SELLER_COLUMN].iloc[0] if len(group) else ""
+            xlsx_bytes = dataframe_to_excel_bytes(
+                group.reset_index(drop=True),
+                sheet_name="Tail_DKP_List",
+                categorical_color_columns={
+                    TAIL_BADGE_COLUMN: _TAIL_BADGE_COLORS,
+                    STATUS_COLUMN: _STATUS_COLORS,
+                },
+            )
+            filename = f"{safe_filename_part(seller_id)}-{safe_filename_part(seller_name)}.xlsx"
+            zf.writestr(filename, xlsx_bytes)
+            seller_count += 1
+
+    logger.info("Built per-seller Tail_DKP_List ZIP export for %d seller(s).", seller_count)
+    buffer.seek(0)
+    return buffer.read()

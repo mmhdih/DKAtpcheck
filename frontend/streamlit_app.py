@@ -191,6 +191,7 @@ tail_badges = st.multiselect(
     options=TAIL_BADGE_OPTIONS, default=TAIL_BADGE_OPTIONS,
 )
 generate_seller_zip = st.checkbox("Also generate the per-seller missing-items ZIP export (for emailing to sellers)")
+generate_tail_seller_zip = st.checkbox("Also generate the per-seller ST/MT/LT Item-Tail ZIP export (one xlsx per seller)")
 st.markdown("</div>", unsafe_allow_html=True)
 
 run_clicked = st.button("▶ Run calculation", type="primary", use_container_width=True)
@@ -216,6 +217,7 @@ if run_clicked:
                     "bullion_categories": bullion_categories,
                     "tail_badges": tail_badges,
                     "generate_seller_zip": generate_seller_zip,
+                    "generate_tail_seller_zip": generate_tail_seller_zip,
                 },
                 timeout=300,
             )
@@ -369,6 +371,20 @@ if result:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
+
+            if meta.get("tail_seller_zip_generated"):
+                st.divider()
+                st.caption("📮 Per-seller ZIP — same badged DKPs, split into one xlsx per seller (SellerID-SellerName.xlsx).")
+                dl_tail_seller_zip = requests.get(
+                    f"{API}/download/tail-seller-zip/{result['result_id']}", timeout=60
+                )
+                st.download_button(
+                    "⬇ Download Tail_DKP_List_by_Seller.zip (per-seller)",
+                    data=dl_tail_seller_zip.content,
+                    file_name="Tail_DKP_List_by_Seller.zip",
+                    mime="application/zip",
+                    use_container_width=True,
+                )
 
     if meta["warnings"]:
         with st.expander(f"⚠️ {len(meta['warnings'])} data warning(s)"):
