@@ -86,7 +86,10 @@ class TailClassification:
     LT: Final[str] = "LT"
     ALL: Final[tuple[str, ...]] = (ST, MT, LT)
 
-    # Cumulative-percentage cutoffs (inclusive), standard ABC/Pareto split.
+    # Cumulative-percentage cutoffs for the standard ABC/Pareto split,
+    # applied to the volume share accumulated BEFORE each item (see
+    # tail_classifier._classify_within_bucket): an item is ST while less
+    # than 30% of the group's volume sits above it, MT below 70%, else LT.
     CUMULATIVE_CUTOFF_ST_PCT: Final[float] = 30.0
     CUMULATIVE_CUTOFF_MT_PCT: Final[float] = 70.0
 

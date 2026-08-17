@@ -177,6 +177,16 @@ volume get **ST**, the next 40% (30–70%) get **MT**, and the remaining
 30% get **LT**. All DKPCs under a badged DKP inherit that DKP's badge.
 DKPs whose total `sum_net_item_fcast` is zero or entirely blank get **no
 badge at all** (they're excluded from the ranking, not defaulted to LT).
+
+**Boundary rule:** a DKP is placed by the share of volume accumulated
+*above* it, not by the share reached once it's counted — so an item that
+straddles a cutoff belongs to the band it **starts** in, not the one it
+overshoots into. This is what makes the top DKP of every group always ST,
+even when that one item is more than 30% of the group's volume on its
+own. (Without it, the per-seller tab — ranking only a few dozen DKPs
+instead of the marketplace's thousands — would push nearly every
+seller's best product past the 30% mark into MT/LT and leave that seller
+with no ST at all.)
 `tail_badges` is a request field (default: all three, i.e. no filtering)
 — filtering happens *before* the ATP calculation, so it changes the
 Summary percentages too, not just

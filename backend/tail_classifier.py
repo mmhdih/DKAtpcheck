@@ -33,16 +33,34 @@ logger = get_logger(__name__)
 
 
 def _classify_within_bucket(group: pd.DataFrame) -> pd.DataFrame:
-    """Rank one bucket's (seller_key, dkp) totals and assign ST/MT/LT against that bucket's own grand total."""
+    """
+    Rank one group's (seller_key, dkp) totals and assign ST/MT/LT against
+    that group's own grand total.
+
+    An item is placed by the volume share accumulated *before* it, so an
+    item that straddles a cutoff belongs to the band it STARTS in, not the
+    one it overshoots into. This is what makes the top item always ST
+    (nothing is accumulated before it).
+
+    Measuring the share *including* the item instead would mean the top
+    item can only be ST when that single item is under 30% of the group's
+    volume on its own. Marketplace-wide that is nearly always true, so it
+    never showed; but ranked within one seller — only a few dozen DKPs,
+    usually with one clear best-seller — the top item routinely exceeds
+    30% and would fall straight to MT or LT, leaving that seller with no
+    ST at all.
+    """
     ordered = group.sort_values("_total_fcast", ascending=False, kind="stable")
     bucket_total = ordered["_total_fcast"].sum()
-    cum_pct = ordered["_total_fcast"].cumsum() / bucket_total * 100.0
+    cum_pct_before = (
+        (ordered["_total_fcast"].cumsum() - ordered["_total_fcast"]) / bucket_total * 100.0
+    )
     return ordered.assign(
         **{
             C.TAIL_BADGE: np.select(
                 [
-                    cum_pct <= TailClassification.CUMULATIVE_CUTOFF_ST_PCT,
-                    cum_pct <= TailClassification.CUMULATIVE_CUTOFF_MT_PCT,
+                    cum_pct_before < TailClassification.CUMULATIVE_CUTOFF_ST_PCT,
+                    cum_pct_before < TailClassification.CUMULATIVE_CUTOFF_MT_PCT,
                 ],
                 [TailClassification.ST, TailClassification.MT],
                 default=TailClassification.LT,

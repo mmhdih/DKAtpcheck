@@ -155,14 +155,16 @@ def test_calculate_response_includes_tail_summary_with_correct_counts():
     )
     assert response.status_code == 200
     body = response.json()
+    # Total 100. D_X (40) is the top item with nothing above it -> ST;
+    # D1 (30) starts at 40% -> MT; D_Y (30) starts at 70% -> LT.
     assert len(body["tail_summary"]) == 1
     row = body["tail_summary"][0]
     assert row["seller_id"] == "S1"
+    assert row["st_unavailable"] == 1  # D_X: ST badge, NOT ATP
     assert row["mt_available"] == 1  # D1: MT badge, ATP
-    assert row["mt_unavailable"] == 1  # D_X: MT badge, NOT ATP
     assert row["lt_unavailable"] == 1  # D_Y: LT badge, NOT ATP
     assert row["st_available"] == 0
-    assert row["st_unavailable"] == 0
+    assert row["mt_unavailable"] == 0
     assert row["lt_available"] == 0
 
     dl = client.get(f"/api/v1/download/tail-summary/{body['result_id']}")
@@ -237,11 +239,16 @@ def test_calculate_response_includes_seller_tail_summary():
     assert len(body["seller_tail_summary"]) == 1
     row = body["seller_tail_summary"][0]
     assert row["seller_id"] == "S1"
-    # D1 (30) + D_X (40) = 70 total for this seller alone; D_X (40) sorts first,
-    # cum=40/70=57.1% -> MT (ATP-unresolved live match doesn't matter here, only
-    # that the badge itself is computed against this seller's OWN 70 total, not
-    # the marketplace grand total used by tail_summary).
-    assert row["mt_available"] + row["mt_unavailable"] == 1
+    # D1 (30) + D_X (40) = 70 total for this seller alone. D_X sorts first
+    # with nothing above it -> ST (and it's NOT ATP); D1 then starts at
+    # 40/70 = 57.1% -> MT (and it IS ATP). The badges are computed against
+    # this seller's OWN 70 total, not the marketplace grand total.
+    assert row["st_unavailable"] == 1
+    assert row["mt_available"] == 1
+    assert row["st_available"] == 0
+    assert row["mt_unavailable"] == 0
+    assert row["lt_available"] == 0
+    assert row["lt_unavailable"] == 0
 
     dl_summary = client.get(f"/api/v1/download/seller-tail-summary/{body['result_id']}")
     assert dl_summary.status_code == 200
