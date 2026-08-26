@@ -48,6 +48,16 @@ CUSTOM_CSS = """
     .atp-hero h1 {font-size: 1.6rem; margin: 0 0 0.2rem 0; font-weight: 700;}
     .atp-hero p {margin: 0; opacity: 0.85; font-size: 0.95rem;}
 
+    .atp-hero-links {margin-top: 0.75rem; font-size: 0.88rem;}
+    .atp-hero-links a {
+        color: #F9FAFB !important;
+        text-decoration: none !important;
+        opacity: 0.8;
+        border-bottom: 1px solid rgba(249, 250, 251, 0.35);
+    }
+    .atp-hero-links a:hover {opacity: 1; border-bottom-color: #F9FAFB;}
+    .atp-hero-links span {opacity: 0.45; margin: 0 0.5rem;}
+
     .atp-card {
         background: #FFFFFF;
         border: 1px solid #E5E7EB;
@@ -67,15 +77,53 @@ CUSTOM_CSS = """
         border-radius: 8px;
         font-weight: 600;
     }
+
+    .atp-footer {
+        margin-top: 2.5rem;
+        padding-top: 1.3rem;
+        border-top: 1px solid #E5E7EB;
+        text-align: center;
+        color: #6B7280;
+        font-size: 0.9rem;
+    }
+    .atp-footer-links {
+        display: flex;
+        gap: 0.6rem;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-top: 0.8rem;
+    }
+    .atp-footer-links a {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.45rem 0.95rem;
+        border-radius: 8px;
+        border: 1px solid #E5E7EB;
+        background: #FFFFFF;
+        color: #1F2937 !important;
+        text-decoration: none !important;
+        font-weight: 600;
+    }
+    .atp-footer-links a:hover {background: #F9FAFB; border-color: #9CA3AF;}
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
+GITHUB_URL = "https://github.com/mmhdih"
+TELEGRAM_HANDLE = "@mmhdih"
+TELEGRAM_URL = "https://t.me/mmhdih"
+
 st.markdown(
-    """
+    f"""
     <div class="atp-hero">
         <h1>📦 ATP Analyzer By Haj Mehdi</h1>
         <p>Upload Live_Data and Sold_Data to find out which sold products are Available To Purchase.</p>
+        <div class="atp-hero-links">
+            <a href="{GITHUB_URL}" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <span>·</span>
+            <a href="{TELEGRAM_URL}" target="_blank" rel="noopener noreferrer">Telegram {TELEGRAM_HANDLE}</a>
+        </div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -442,3 +490,20 @@ if result:
         with st.expander(f"⚠️ {len(meta['warnings'])} data warning(s)"):
             for w in meta["warnings"]:
                 st.write(f"- {w}")
+
+# --------------------------------------------------------------------------- #
+# Footer — rendered outside the results block so it's always visible, even
+# before the first calculation.
+# --------------------------------------------------------------------------- #
+st.markdown(
+    f"""
+    <div class="atp-footer">
+        Built by <strong>Haj Mehdi</strong> — questions, bugs, or feature ideas? Get in touch.
+        <div class="atp-footer-links">
+            <a href="{GITHUB_URL}" target="_blank" rel="noopener noreferrer">🐙 GitHub</a>
+            <a href="{TELEGRAM_URL}" target="_blank" rel="noopener noreferrer">✈️ Telegram {TELEGRAM_HANDLE}</a>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
