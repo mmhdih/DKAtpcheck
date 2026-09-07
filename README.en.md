@@ -125,7 +125,7 @@ purely for display and is never used to match rows across files.
 | `Seller_Name` | `marketplace_seller_name` | `seller` | display only |
 | `DKP` | `product_id` | `dkp` | |
 | `DKPC` | `product_variant_id` | `dkpc` | |
-| `Size_Name` | `product_variant_name_fa` | `weight` | parsed via the same numeric/"`<n> گرم`" logic on both sides |
+| `Weight` | `product_variant_name_fa` | `weight` | parsed via the same numeric/"`<n> گرم`" logic on both sides |
 | — | `category_name_fa` | `category` | Sold_Data only; drives the Bullion/Jewelry bucket |
 | — | `sum_net_item_fcast` | `net_item_fcast` | Sold_Data only; drives the ST/MT/LT tail badge |
 
@@ -134,6 +134,13 @@ example templates straight from the app (`⬇ Live_Data template` /
 `⬇ Sold_Data template` buttons, or `GET /api/v1/templates/live-data` /
 `GET /api/v1/templates/sold-data`) so column names never have to be
 guessed.
+
+If a seller renames one of these raw columns (e.g. the weight column
+above used to be `Size_Name` and is now `Weight`), no code change is
+needed: open the **⚙️ Settings — column names** panel at the top of the
+app and correct it there. The value is saved locally
+(`~/.atp_analyzer/field_names.json`) and reloaded automatically on every
+run, so it's only ever entered once.
 
 ## 🧮 How matching works
 
@@ -370,7 +377,7 @@ same `put()`/`get()` interface — nothing else needs to change.
   (e.g. `20911381.0`) just because some other cell in that column is
   blank.
 - `product_variant_name_fa` in Sold_Data is parsed the same way as
-  `Size_Name` in Live_Data (plain numbers and `"<number> گرم"` text are
+  `Weight` in Live_Data (plain numbers and `"<number> گرم"` text are
   both accepted).
 - A `category_name_fa` value that's blank or not explicitly marked as
   Bullion defaults to the Jewelry bucket.

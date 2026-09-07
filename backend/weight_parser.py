@@ -11,8 +11,9 @@ If no recognizable weight pattern exists, the weight is considered
 unavailable (returns None) — per the spec, such sold rows fall back to
 exact-DKPC matching only.
 
-Also used for Live_Data's Size_Name column via `to_numeric_weight`, which
-accepts either an already-numeric value or the same free-form text pattern.
+Also used for Live_Data's weight column (see field_names.py) via
+`to_numeric_weight`, which accepts either an already-numeric value or the
+same free-form text pattern.
 """
 from __future__ import annotations
 

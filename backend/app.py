@@ -6,6 +6,9 @@ FastAPI application exposing the ATP Analyzer as a REST API.
 Endpoints:
     GET  /api/v1/health                        liveness check
     GET  /api/v1/config                        UI-facing defaults (tolerance presets, limits)
+    GET  /api/v1/field-names                    current raw column names (with saved overrides)
+    POST /api/v1/field-names                    save raw-column-name overrides (Settings panel)
+    POST /api/v1/field-names/reset              revert raw column names to built-in defaults
     POST /api/v1/sold-data/categories           distinct category_name_fa values in a Sold_Data file
     POST /api/v1/calculate                      run the full ATP pipeline on two uploaded files
     GET  /api/v1/download/summary/{result_id}       Summary.xlsx
@@ -36,12 +39,16 @@ from fastapi.responses import StreamingResponse
 from .atp_engine import ATPEngine, ATPIndex, ATPResult, assign_bucket
 from .config import CanonicalColumns, TailClassification, get_settings
 from .excel_loader import ExcelValidationError, load_live_data, load_sold_data
+from .field_names import DEFAULT_FIELD_NAMES, FIELD_LABELS, get_field_names, reset_field_names, save_field_names
 from .missing_generator import build_missing, missing_to_excel_bytes
 from .models import (
     CalculationMeta,
     CalculationResponse,
     CategoryListResponse,
     ErrorResponse,
+    FieldNameItem,
+    FieldNamesResponse,
+    FieldNamesUpdateRequest,
     MissingRow,
     SummaryRow,
     TailSummaryRow,
@@ -107,6 +114,39 @@ def public_config() -> dict:
         "max_upload_size_mb": settings.max_upload_size_mb,
         "tail_badges": list(TailClassification.ALL),
     }
+
+
+def _field_names_response() -> FieldNamesResponse:
+    current = get_field_names()
+    return FieldNamesResponse(
+        fields=[
+            FieldNameItem(key=key, label=FIELD_LABELS[key], value=current[key], default=default)
+            for key, default in DEFAULT_FIELD_NAMES.items()
+        ]
+    )
+
+
+@app.get(f"{settings.api_v1_prefix}/field-names", response_model=FieldNamesResponse)
+def get_field_name_settings() -> FieldNamesResponse:
+    """Current raw column names expected per file, including any saved overrides."""
+    return _field_names_response()
+
+
+@app.post(f"{settings.api_v1_prefix}/field-names", response_model=FieldNamesResponse)
+def update_field_name_settings(payload: FieldNamesUpdateRequest) -> FieldNamesResponse:
+    """Save field-name overrides (e.g. a seller renamed a column) to local storage."""
+    unknown = set(payload.values) - set(DEFAULT_FIELD_NAMES)
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown field-name key(s): {sorted(unknown)}")
+    save_field_names(payload.values)
+    return _field_names_response()
+
+
+@app.post(f"{settings.api_v1_prefix}/field-names/reset", response_model=FieldNamesResponse)
+def reset_field_name_settings() -> FieldNamesResponse:
+    """Revert every field name to its built-in default."""
+    reset_field_names()
+    return _field_names_response()
 
 
 @app.post(

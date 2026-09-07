@@ -27,7 +27,8 @@ from typing import BinaryIO
 
 import pandas as pd
 
-from .config import CanonicalColumns, LiveDataColumns, SoldDataColumns, get_settings
+from .config import CanonicalColumns, get_settings
+from .field_names import get_field_names
 from .utils import get_logger, normalize_id, normalize_text
 from .weight_parser import to_numeric_weight
 
@@ -135,16 +136,22 @@ def load_live_data(file: BinaryIO | bytes, *, filename: str | None = None) -> Lo
     Output columns: seller_id, seller, seller_key, dkp, dkpc, weight
     """
     warnings: list[str] = []
+    names = get_field_names()
+    required = (
+        names["live_seller_id"], names["live_seller"],
+        names["live_dkp"], names["live_dkpc"], names["live_weight"],
+    )
     raw_df = _read_tabular_any_engine(file, source_name="Live_Data", filename=filename)
-    _require_columns(raw_df, LiveDataColumns.REQUIRED, source_name="Live_Data")
+    _require_columns(raw_df, required, source_name="Live_Data")
 
+    weight_source_col = names["live_weight"]
     df = pd.DataFrame(
         {
-            CanonicalColumns.SELLER_ID: raw_df[LiveDataColumns.SELLER_ID].map(normalize_id),
-            CanonicalColumns.SELLER: raw_df[LiveDataColumns.SELLER].map(normalize_text),
-            CanonicalColumns.DKP: raw_df[LiveDataColumns.DKP].map(normalize_id),
-            CanonicalColumns.DKPC: raw_df[LiveDataColumns.DKPC].map(normalize_id),
-            LiveDataColumns.SIZE_NAME: raw_df[LiveDataColumns.SIZE_NAME],
+            CanonicalColumns.SELLER_ID: raw_df[names["live_seller_id"]].map(normalize_id),
+            CanonicalColumns.SELLER: raw_df[names["live_seller"]].map(normalize_text),
+            CanonicalColumns.DKP: raw_df[names["live_dkp"]].map(normalize_id),
+            CanonicalColumns.DKPC: raw_df[names["live_dkpc"]].map(normalize_id),
+            weight_source_col: raw_df[weight_source_col],
         }
     )
 
@@ -156,16 +163,16 @@ def load_live_data(file: BinaryIO | bytes, *, filename: str | None = None) -> Lo
     )
 
     df[CanonicalColumns.SELLER_KEY] = df[CanonicalColumns.SELLER_ID].str.casefold()
-    df[CanonicalColumns.WEIGHT] = df[LiveDataColumns.SIZE_NAME].map(to_numeric_weight)
+    df[CanonicalColumns.WEIGHT] = df[weight_source_col].map(to_numeric_weight)
 
     unresolved = int(df[CanonicalColumns.WEIGHT].isna().sum())
     if unresolved:
         warnings.append(
-            f"Live_Data: {unresolved} row(s) have an unresolvable Size_Name weight "
+            f"Live_Data: {unresolved} row(s) have an unresolvable '{weight_source_col}' weight "
             f"(they still count for exact-DKPC and DKP-level matching)."
         )
 
-    df = df.drop(columns=[LiveDataColumns.SIZE_NAME])
+    df = df.drop(columns=[weight_source_col])
     logger.info("Loaded Live_Data: %d rows after cleaning.", len(df))
     return LoadResult(df=df, warnings=warnings)
 
@@ -178,19 +185,24 @@ def load_sold_data(file: BinaryIO | bytes, *, filename: str | None = None) -> Lo
                     category, net_item_fcast
     """
     warnings: list[str] = []
+    names = get_field_names()
+    required = (
+        names["sold_seller_id"], names["sold_seller"], names["sold_dkp"], names["sold_dkpc"],
+        names["sold_weight_source"], names["sold_category"], names["sold_net_item_fcast"],
+    )
     raw_df = _read_tabular_any_engine(file, source_name="Sold_Data", filename=filename)
-    _require_columns(raw_df, SoldDataColumns.REQUIRED, source_name="Sold_Data")
+    _require_columns(raw_df, required, source_name="Sold_Data")
 
     df = pd.DataFrame(
         {
-            CanonicalColumns.SELLER_ID: raw_df[SoldDataColumns.SELLER_ID].map(normalize_id),
-            CanonicalColumns.SELLER: raw_df[SoldDataColumns.SELLER].map(normalize_text),
-            CanonicalColumns.DKP: raw_df[SoldDataColumns.DKP].map(normalize_id),
-            CanonicalColumns.DKPC: raw_df[SoldDataColumns.DKPC].map(normalize_id),
-            CanonicalColumns.SOURCE_TEXT: raw_df[SoldDataColumns.WEIGHT_SOURCE],
-            CanonicalColumns.CATEGORY: raw_df[SoldDataColumns.CATEGORY].map(normalize_text),
+            CanonicalColumns.SELLER_ID: raw_df[names["sold_seller_id"]].map(normalize_id),
+            CanonicalColumns.SELLER: raw_df[names["sold_seller"]].map(normalize_text),
+            CanonicalColumns.DKP: raw_df[names["sold_dkp"]].map(normalize_id),
+            CanonicalColumns.DKPC: raw_df[names["sold_dkpc"]].map(normalize_id),
+            CanonicalColumns.SOURCE_TEXT: raw_df[names["sold_weight_source"]],
+            CanonicalColumns.CATEGORY: raw_df[names["sold_category"]].map(normalize_text),
             CanonicalColumns.NET_ITEM_FCAST: pd.to_numeric(
-                raw_df[SoldDataColumns.NET_ITEM_FCAST], errors="coerce"
+                raw_df[names["sold_net_item_fcast"]], errors="coerce"
             ),
         }
     )
@@ -208,7 +220,7 @@ def load_sold_data(file: BinaryIO | bytes, *, filename: str | None = None) -> Lo
     unresolved = int(df[CanonicalColumns.WEIGHT].isna().sum())
     if unresolved:
         warnings.append(
-            f"Sold_Data: {unresolved} row(s) have no extractable weight in product_variant_name_fa "
+            f"Sold_Data: {unresolved} row(s) have no extractable weight in '{names['sold_weight_source']}' "
             f"(exact-DKPC matching only will apply to these)."
         )
 

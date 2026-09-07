@@ -28,7 +28,10 @@ class LiveDataColumns:
     SELLER: Final[str] = "Seller_Name"
     DKP: Final[str] = "DKP"
     DKPC: Final[str] = "DKPC"
-    SIZE_NAME: Final[str] = "Size_Name"
+    # The seller-side export renamed this column from "Size_Name" to
+    # "Weight"; the raw header name itself is user-editable at runtime via
+    # field_names.py (Settings panel), this is only the built-in default.
+    SIZE_NAME: Final[str] = "Weight"
 
     REQUIRED: Final[tuple[str, ...]] = (SELLER_ID, SELLER, DKP, DKPC, SIZE_NAME)
 
