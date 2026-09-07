@@ -146,6 +146,25 @@ def _fetch_backend_config() -> dict:
     return resp.json()
 
 
+@st.cache_data(ttl=5, show_spinner=False)
+def _fetch_field_names() -> dict:
+    resp = requests.get(f"{API}/field-names", timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _save_field_names(values: dict[str, str]) -> dict:
+    resp = requests.post(f"{API}/field-names", json={"values": values}, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _reset_field_names() -> dict:
+    resp = requests.post(f"{API}/field-names/reset", timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
 @st.cache_data(show_spinner=False)
 def _fetch_template(kind: str) -> bytes:
     resp = requests.get(f"{API}/templates/{kind}", timeout=30)
@@ -170,6 +189,65 @@ except requests.RequestException:
         "Make sure it's running (`uvicorn backend.app:app`)."
     )
     st.stop()
+
+# --------------------------------------------------------------------------- #
+# Settings — editable raw column names, persisted locally on this machine
+# --------------------------------------------------------------------------- #
+with st.expander("⚙️ تنظیمات — نام ستون‌های اکسل (Settings — column names)", expanded=False):
+    st.caption(
+        "اگه فروشنده اسم یکی از ستون‌های Live_Data یا Sold_Data رو تغییر داد (مثلاً ستون وزن)، "
+        "می‌تونی همینجا اصلاحش کنی. مقادیر روی همین سیستم ذخیره می‌شن و دیگه لازم نیست هر بار "
+        "دوباره وارد کنی."
+    )
+    try:
+        field_names_cfg = _fetch_field_names()
+    except requests.RequestException as exc:
+        field_names_cfg = None
+        st.warning(f"تنظیمات نام ستون‌ها در دسترس نیست: {exc}")
+
+    if field_names_cfg:
+        with st.form("field_names_form"):
+            live_fields = [f for f in field_names_cfg["fields"] if f["key"].startswith("live_")]
+            sold_fields = [f for f in field_names_cfg["fields"] if f["key"].startswith("sold_")]
+
+            fcol_live, fcol_sold = st.columns(2)
+            new_values: dict[str, str] = {}
+            with fcol_live:
+                st.markdown("**Live_Data**")
+                for f in live_fields:
+                    new_values[f["key"]] = st.text_input(
+                        f["label"], value=f["value"], key=f"field_name_{f['key']}"
+                    )
+            with fcol_sold:
+                st.markdown("**Sold_Data**")
+                for f in sold_fields:
+                    new_values[f["key"]] = st.text_input(
+                        f["label"], value=f["value"], key=f"field_name_{f['key']}"
+                    )
+
+            bcol1, bcol2 = st.columns(2)
+            save_clicked = bcol1.form_submit_button("💾 ذخیره", use_container_width=True)
+            reset_clicked = bcol2.form_submit_button(
+                "↩️ بازگردانی به پیش‌فرض", use_container_width=True
+            )
+
+        if save_clicked:
+            try:
+                _save_field_names(new_values)
+                _fetch_field_names.clear()
+                st.success("تنظیمات ذخیره شد.")
+                st.rerun()
+            except requests.RequestException as exc:
+                st.error(f"ذخیره تنظیمات با خطا مواجه شد: {exc}")
+
+        if reset_clicked:
+            try:
+                _reset_field_names()
+                _fetch_field_names.clear()
+                st.success("نام ستون‌ها به پیش‌فرض بازگشت.")
+                st.rerun()
+            except requests.RequestException as exc:
+                st.error(f"بازگردانی با خطا مواجه شد: {exc}")
 
 # --------------------------------------------------------------------------- #
 # Inputs

@@ -4,9 +4,18 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
+from backend import field_names as fn
 from backend.app import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_field_names_settings_file(tmp_path, monkeypatch):
+    """Never touch the real user home directory while testing."""
+    monkeypatch.setattr(fn, "_SETTINGS_DIR", tmp_path / ".atp_analyzer")
+    monkeypatch.setattr(fn, "_SETTINGS_FILE", tmp_path / ".atp_analyzer" / "field_names.json")
+    yield
 
 
 def _xlsx_bytes(df: pd.DataFrame) -> bytes:
@@ -31,7 +40,7 @@ def _live_bytes() -> bytes:
                 "Seller_Name": ["ACME", "ACME"],
                 "DKP": ["D1", "D2"],
                 "DKPC": ["D1C1", "D2C1"],
-                "Size_Name": [1.0, 2.0],
+                "Weight": [1.0, 2.0],
             }
         )
     )
@@ -95,7 +104,7 @@ def test_calculate_accepts_csv_uploads():
             "Seller_Name": ["ACME", "ACME"],
             "DKP": ["D1", "D2"],
             "DKPC": ["D1C1", "D2C1"],
-            "Size_Name": [1.0, 2.0],
+            "Weight": [1.0, 2.0],
         }
     )
     sold_df = pd.DataFrame(
@@ -282,3 +291,59 @@ def test_templates_endpoints_return_xlsx():
         response = client.get(path)
         assert response.status_code == 200
         assert response.content
+
+
+def test_get_field_names_returns_defaults():
+    response = client.get("/api/v1/field-names")
+    assert response.status_code == 200
+    fields = {f["key"]: f for f in response.json()["fields"]}
+    assert fields["live_weight"]["value"] == fields["live_weight"]["default"] == "Weight"
+
+
+def test_update_field_names_persists_and_is_reflected_in_get():
+    response = client.post("/api/v1/field-names", json={"values": {"live_weight": "Renamed"}})
+    assert response.status_code == 200
+    fields = {f["key"]: f for f in response.json()["fields"]}
+    assert fields["live_weight"]["value"] == "Renamed"
+
+    response = client.get("/api/v1/field-names")
+    fields = {f["key"]: f for f in response.json()["fields"]}
+    assert fields["live_weight"]["value"] == "Renamed"
+
+
+def test_update_field_names_rejects_unknown_key():
+    response = client.post("/api/v1/field-names", json={"values": {"not_a_real_key": "x"}})
+    assert response.status_code == 400
+
+
+def test_reset_field_names_reverts_to_default():
+    client.post("/api/v1/field-names", json={"values": {"live_weight": "Renamed"}})
+    response = client.post("/api/v1/field-names/reset")
+    assert response.status_code == 200
+    fields = {f["key"]: f for f in response.json()["fields"]}
+    assert fields["live_weight"]["value"] == "Weight"
+
+
+def test_calculate_uses_renamed_live_weight_column():
+    client.post("/api/v1/field-names", json={"values": {"live_weight": "Renamed_Weight"}})
+    live_bytes = _xlsx_bytes(
+        pd.DataFrame(
+            {
+                "Seller_ID": ["S1", "S1"],
+                "Seller_Name": ["ACME", "ACME"],
+                "DKP": ["D1", "D2"],
+                "DKPC": ["D1C1", "D2C1"],
+                "Renamed_Weight": [1.0, 2.0],
+            }
+        )
+    )
+    response = client.post(
+        "/api/v1/calculate",
+        files={
+            "live_file": ("Live_Data.xlsx", live_bytes),
+            "sold_file": ("Sold_Data.xlsx", _sold_bytes()),
+        },
+        data={"tolerance_pct": 10},
+    )
+    assert response.status_code == 200
+    assert response.json()["summary"][0]["seller_id"] == "S1"

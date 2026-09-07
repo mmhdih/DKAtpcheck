@@ -27,7 +27,7 @@ def test_load_live_data_happy_path():
             "Seller_Name": ["ACME", " Beta Co "],
             "DKP": ["D1", "D2"],
             "DKPC": ["D1C1", "D2C1"],
-            "Size_Name": ["0.65 گرم", 2.5],
+            "Weight": ["0.65 گرم", 2.5],
         }
     )
     result = load_live_data(_to_xlsx_bytes(df))
@@ -39,7 +39,7 @@ def test_load_live_data_happy_path():
 
 
 def test_load_live_data_missing_column_raises():
-    df = pd.DataFrame({"Seller_Name": ["ACME"], "DKP": ["D1"]})  # missing Seller_ID, DKPC, Size_Name
+    df = pd.DataFrame({"Seller_Name": ["ACME"], "DKP": ["D1"]})  # missing Seller_ID, DKPC, Weight
     with pytest.raises(ExcelValidationError):
         load_live_data(_to_xlsx_bytes(df))
 
@@ -50,7 +50,7 @@ def test_load_live_data_missing_seller_id_column_raises():
             "Seller_Name": ["ACME"],
             "DKP": ["D1"],
             "DKPC": ["D1C1"],
-            "Size_Name": [1.0],
+            "Weight": [1.0],
         }
     )
     with pytest.raises(ExcelValidationError):
@@ -64,7 +64,7 @@ def test_load_live_data_drops_rows_missing_identifiers_and_warns():
             "Seller_Name": ["ACME", "Beta", "Gamma"],
             "DKP": ["D1", "D2", "D3"],
             "DKPC": ["D1C1", "D2C1", "D3C1"],
-            "Size_Name": [1.0, 2.0, 3.0],
+            "Weight": [1.0, 2.0, 3.0],
         }
     )
     result = load_live_data(_to_xlsx_bytes(df))
@@ -79,7 +79,7 @@ def test_load_live_data_unresolvable_weight_warns_but_keeps_row():
             "Seller_Name": ["ACME"],
             "DKP": ["D1"],
             "DKPC": ["D1C1"],
-            "Size_Name": ["no weight here"],
+            "Weight": ["no weight here"],
         }
     )
     result = load_live_data(_to_xlsx_bytes(df))
@@ -97,7 +97,7 @@ def test_seller_id_with_float_upcast_is_normalized():
             "Seller_Name": ["ACME", "Beta"],
             "DKP": ["D1", "D2"],
             "DKPC": ["D1C1", "D2C1"],
-            "Size_Name": [1.0, 2.0],
+            "Weight": [1.0, 2.0],
         }
     )
     result = load_live_data(_to_xlsx_bytes(df))
@@ -111,7 +111,7 @@ def test_dkp_dkpc_with_float_upcast_are_normalized():
             "Seller_Name": ["ACME", "Beta"],
             "DKP": [551306.0, 551307.0],
             "DKPC": [59916616.0, 59916617.0],
-            "Size_Name": [1.0, 2.0],
+            "Weight": [1.0, 2.0],
         }
     )
     result = load_live_data(_to_xlsx_bytes(df))
@@ -200,7 +200,7 @@ def test_seller_id_is_the_join_key_not_seller_name():
             "Seller_Name": [" Beta Co "],
             "DKP": ["D2"],
             "DKPC": ["D2C1"],
-            "Size_Name": [2.5],
+            "Weight": [2.5],
         }
     )
     # Same Seller_ID, different display name -> same seller_key.
@@ -244,7 +244,7 @@ def test_load_live_data_reads_csv_when_filename_ends_with_csv():
             "Seller_Name": ["ACME"],
             "DKP": ["D1"],
             "DKPC": ["D1C1"],
-            "Size_Name": ["0.65 گرم"],
+            "Weight": ["0.65 گرم"],
         }
     )
     result = load_live_data(_to_csv_bytes(df), filename="Live_Data.csv")
@@ -293,7 +293,7 @@ def test_xlsx_filename_is_not_treated_as_csv():
             "Seller_Name": ["ACME"],
             "DKP": ["D1"],
             "DKPC": ["D1C1"],
-            "Size_Name": [1.0],
+            "Weight": [1.0],
         }
     )
     result = load_live_data(_to_xlsx_bytes(df), filename="Live_Data.xlsx")

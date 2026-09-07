@@ -159,3 +159,24 @@ class ErrorResponse(BaseModel):
     """Uniform error body for 4xx/5xx responses."""
 
     detail: str
+
+
+class FieldNameItem(BaseModel):
+    """One editable raw-column-name field, for the Settings panel."""
+
+    key: str
+    label: str
+    value: str
+    default: str
+
+
+class FieldNamesResponse(BaseModel):
+    """Response of GET/POST /api/v1/field-names."""
+
+    fields: list[FieldNameItem]
+
+
+class FieldNamesUpdateRequest(BaseModel):
+    """Body of POST /api/v1/field-names — new value per field key."""
+
+    values: dict[str, str] = Field(default_factory=dict)
