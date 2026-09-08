@@ -4,7 +4,7 @@ streamlit_app.py
 Thin UI client for the ATP Analyzer FastAPI backend. Contains no business
 logic: it uploads the two Excel files, lets the user set the weight
 tolerance plus the Bullion/Jewelry category split and Item-Tail (ST/MT/LT)
-filters, calls the backend, and renders the Summary / ATP_Missing results
+filters, calls the backend, and renders the Summary / ATP_DKPC results
 with download buttons (including the optional per-seller ZIP export).
 
 Run with:
@@ -453,9 +453,9 @@ if result:
 
         dl_missing = requests.get(f"{API}/download/missing/{result['result_id']}", timeout=60)
         st.download_button(
-            "⬇ Download ATP_Missing.xlsx",
+            "⬇ Download ATP_DKPC.xlsx",
             data=dl_missing.content,
-            file_name="ATP_Missing.xlsx",
+            file_name="ATP_DKPC.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
@@ -468,9 +468,9 @@ if result:
             )
             dl_zip = requests.get(f"{API}/download/seller-zip/{result['result_id']}", timeout=60)
             st.download_button(
-                "⬇ Download per-seller ZIP (ATP_Missing_by_Seller.zip)",
+                "⬇ Download per-seller ZIP (ATP_DKPC_by_Seller.zip)",
                 data=dl_zip.content,
-                file_name="ATP_Missing_by_Seller.zip",
+                file_name="ATP_DKPC_by_Seller.zip",
                 mime="application/zip",
                 use_container_width=True,
             )

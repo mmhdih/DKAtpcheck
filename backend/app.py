@@ -12,10 +12,10 @@ Endpoints:
     POST /api/v1/sold-data/categories           distinct category_name_fa values in a Sold_Data file
     POST /api/v1/calculate                      run the full ATP pipeline on two uploaded files
     GET  /api/v1/download/summary/{result_id}       Summary.xlsx
-    GET  /api/v1/download/missing/{result_id}       ATP_Missing.xlsx
+    GET  /api/v1/download/missing/{result_id}       ATP_DKPC.xlsx
     GET  /api/v1/download/tail-summary/{result_id}  Tail_Summary.xlsx
     GET  /api/v1/download/tail-dkp-list/{result_id} Tail_DKP_List.xlsx
-    GET  /api/v1/download/seller-zip/{result_id}    ATP_Missing_by_Seller.zip (opt-in)
+    GET  /api/v1/download/seller-zip/{result_id}    ATP_DKPC_by_Seller.zip (opt-in)
     GET  /api/v1/download/seller-tail-summary/{result_id}  Seller_Tail_Summary.xlsx
     GET  /api/v1/download/seller-tail-dkp-list/{result_id} Seller_Tail_DKP_List.xlsx
     GET  /api/v1/download/seller-tail-zip/{result_id}      Seller_Tail_DKP_List_by_Seller.zip (opt-in)
@@ -409,7 +409,7 @@ def download_missing(result_id: str) -> StreamingResponse:
     return StreamingResponse(
         io.BytesIO(xlsx_bytes),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=ATP_Missing.xlsx"},
+        headers={"Content-Disposition": "attachment; filename=ATP_DKPC.xlsx"},
     )
 
 
@@ -449,7 +449,7 @@ def download_seller_zip(result_id: str) -> StreamingResponse:
     return StreamingResponse(
         io.BytesIO(entry.seller_zip_bytes),
         media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=ATP_Missing_by_Seller.zip"},
+        headers={"Content-Disposition": "attachment; filename=ATP_DKPC_by_Seller.zip"},
     )
 
 

@@ -153,7 +153,7 @@ class CalculationResponse(BaseModel):
     missing_preview: list[MissingRow] = Field(
         default_factory=list,
         description=(
-            "First N rows of ATP_Missing for on-screen preview. The full "
+            "First N rows of ATP_DKPC for on-screen preview. The full "
             "table is retrieved via the dedicated download endpoint."
         ),
     )
