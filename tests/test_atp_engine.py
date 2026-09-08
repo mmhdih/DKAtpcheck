@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from backend.atp_engine import ATPEngine, ATPIndex, ATPRule
+from backend.atp_engine import ATPEngine, ATPIndex, ATPRule, attach_dkp_names
 from backend.config import CanonicalColumns as C
 from backend.config import CategoryBucket
 from backend.models import ATPMatchType
@@ -11,6 +11,7 @@ from backend.models import ATPMatchType
 def _live(rows: list[tuple[str, str, str, float | None]]) -> pd.DataFrame:
     df = pd.DataFrame(rows, columns=[C.SELLER, C.DKP, C.DKPC, C.WEIGHT])
     df[C.SELLER_KEY] = df[C.SELLER].str.casefold()
+    df[C.DKP_NAME] = ""
     return df
 
 
@@ -18,6 +19,7 @@ def _sold(rows: list[tuple[str, str, str, float | None]]) -> pd.DataFrame:
     df = pd.DataFrame(rows, columns=[C.SELLER, C.DKP, C.DKPC, C.WEIGHT])
     df[C.SELLER_KEY] = df[C.SELLER].str.casefold()
     df[C.SELLER_ID] = df[C.SELLER]
+    df[C.DKP_NAME] = ""
     df[C.CATEGORY] = ""
     df[C.BUCKET] = CategoryBucket.JEWELRY
     df[C.NET_ITEM_FCAST] = 0.0
@@ -192,3 +194,41 @@ def test_extra_columns_ride_through_to_result(index):
     dkp_row = result.dkp_results.iloc[0]
     assert dkp_row[C.BUCKET] == CategoryBucket.BULLION
     assert dkp_row[C.TAIL_BADGE] == "ST"
+
+
+# --------------------------------------------------------------------------- #
+# attach_dkp_names
+# --------------------------------------------------------------------------- #
+def test_attach_dkp_names_resolves_from_live_data():
+    live = _live([("ACME", "D1", "D1C1", 0.65)])
+    live[C.DKP_NAME] = "Gold bracelet"
+    sold = _sold([("ACME", "D1", "D1C1", 0.65)])
+    named = attach_dkp_names(sold, live)
+    assert list(named[C.DKP_NAME]) == ["Gold bracelet"]
+
+
+def test_attach_dkp_names_is_marketplace_wide_not_per_seller():
+    # The name of a DKP this seller no longer has live — exactly the rows
+    # the Missing report is about — still resolves from another seller's
+    # live row, because a DKP is a marketplace-wide product id.
+    live = _live([("Beta Co", "D1", "D1C9", 1.0)])
+    live[C.DKP_NAME] = "Gold bracelet"
+    sold = _sold([("ACME", "D1", "D1C1", 0.65)])
+    named = attach_dkp_names(sold, live)
+    assert list(named[C.DKP_NAME]) == ["Gold bracelet"]
+
+
+def test_attach_dkp_names_leaves_unknown_dkps_blank_without_dropping_rows():
+    live = _live([("ACME", "D1", "D1C1", 0.65)])
+    live[C.DKP_NAME] = "Gold bracelet"
+    sold = _sold([("ACME", "D1", "D1C1", 0.65), ("ACME", "D_UNKNOWN", "D_UC1", 1.0)])
+    named = attach_dkp_names(sold, live)
+    assert list(named[C.DKP_NAME]) == ["Gold bracelet", ""]
+    assert len(named) == 2
+
+
+def test_attach_dkp_names_blank_when_live_data_has_no_names():
+    live = _live([("ACME", "D1", "D1C1", 0.65)])  # dkp_name is "" throughout
+    sold = _sold([("ACME", "D1", "D1C1", 0.65)])
+    named = attach_dkp_names(sold, live)
+    assert list(named[C.DKP_NAME]) == [""]

@@ -16,11 +16,15 @@ from .utils import dataframe_to_excel_bytes
 
 def build_live_data_template_bytes() -> bytes:
     names = get_field_names()
-    columns = [names["live_seller_id"], names["live_seller"], names["live_dkp"], names["live_dkpc"], names["live_weight"]]
+    columns = [
+        names["live_seller_id"], names["live_seller"], names["live_dkp"],
+        names["live_dkp_name"], names["live_dkpc"], names["live_weight"],
+    ]
     example_row = {
         names["live_seller_id"]: "10001",
         names["live_seller"]: "Sample Seller",
         names["live_dkp"]: "551306",
+        names["live_dkp_name"]: "دستبند طلا ۱۸ عیار",
         names["live_dkpc"]: "59916616",
         names["live_weight"]: "0.65 گرم",
     }

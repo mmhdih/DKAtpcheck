@@ -15,6 +15,7 @@ def _dkpc_row(**overrides) -> dict:
         C.SELLER_ID: "S1",
         C.SELLER: "ACME",
         C.DKP: "D1",
+        C.DKP_NAME: "Gold bracelet",
         C.DKPC: "D1C1",
         C.WEIGHT: 1.0,
         C.CATEGORY: "زیورآلات",
@@ -63,16 +64,29 @@ def test_zip_excludes_atp_rows():
     assert "ATP1" not in all_dkpc
 
 
-def test_zip_excludes_zero_or_blank_net_item_fcast_rows():
+def test_zip_excludes_unbadged_rows():
+    # Same identification rule as the Seller ATP Missing table this ZIP is
+    # the hand-off cut of: a DKP with no badge (zero/blank forecast volume
+    # summed across its variants) is not listed at all.
     rows = [
-        _dkpc_row(**{C.DKPC: "ZERO", C.NET_ITEM_FCAST: 0.0}),
-        _dkpc_row(**{C.DKPC: "BLANK", C.NET_ITEM_FCAST: float("nan")}),
-        _dkpc_row(**{C.DKPC: "REAL", C.NET_ITEM_FCAST: 3.0}),
+        _dkpc_row(**{C.DKPC: "UNBADGED", C.TAIL_BADGE: None}),
+        _dkpc_row(**{C.DKPC: "BADGED", C.TAIL_BADGE: "ST"}),
     ]
     zip_bytes = build_seller_missing_zip(_result(rows))
     sheets = _read_zip_sheets(zip_bytes)
     all_dkpc = pd.concat(sheets.values())["DKPC"].tolist()
-    assert all_dkpc == ["REAL"]
+    assert all_dkpc == ["BADGED"]
+
+
+def test_zip_sorts_zero_or_blank_net_item_fcast_rows_last():
+    rows = [
+        _dkpc_row(**{C.DKPC: "BLANK", C.NET_ITEM_FCAST: float("nan")}),
+        _dkpc_row(**{C.DKPC: "ZERO", C.NET_ITEM_FCAST: 0.0}),
+        _dkpc_row(**{C.DKPC: "REAL", C.NET_ITEM_FCAST: 3.0}),
+    ]
+    zip_bytes = build_seller_missing_zip(_result(rows))
+    sheets = _read_zip_sheets(zip_bytes)
+    assert next(iter(sheets.values()))["DKPC"].tolist() == ["REAL", "ZERO", "BLANK"]
 
 
 def test_zip_sorted_by_net_item_fcast_descending_and_excludes_that_column():
@@ -127,5 +141,6 @@ def test_zip_output_columns_are_exactly_the_expected_set():
     sheets = _read_zip_sheets(zip_bytes)
     sheet = next(iter(sheets.values()))
     assert list(sheet.columns) == [
-        "Seller ID", "Seller", "DKP", "DKPC", "Weight", "Category", "Bucket", "Tail Badge",
+        "Seller ID", "Seller", "DKP", "DKP Name", "DKPC", "Weight", "Category", "Bucket",
+        "Tail Badge",
     ]

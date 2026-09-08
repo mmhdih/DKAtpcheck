@@ -26,6 +26,7 @@ def test_load_live_data_happy_path():
             "Seller_ID": ["S1", "S2"],
             "Seller_Name": ["ACME", " Beta Co "],
             "DKP": ["D1", "D2"],
+            "DKP Name": ["Gold bracelet", " شمش طلا "],
             "DKPC": ["D1C1", "D2C1"],
             "Weight": ["0.65 گرم", 2.5],
         }
@@ -34,8 +35,27 @@ def test_load_live_data_happy_path():
     assert list(result.df["seller_id"]) == ["S1", "S2"]
     assert list(result.df["seller"]) == ["ACME", "Beta Co"]
     assert list(result.df["seller_key"]) == ["s1", "s2"]
+    assert list(result.df["dkp_name"]) == ["Gold bracelet", "شمش طلا"]
     assert result.df["weight"].tolist() == [0.65, 2.5]
     assert result.warnings == []
+
+
+def test_load_live_data_without_dkp_name_column_warns_but_still_loads():
+    # The product name only enriches reports, so an assortment export that
+    # doesn't carry it must not be rejected.
+    df = pd.DataFrame(
+        {
+            "Seller_ID": ["S1"],
+            "Seller_Name": ["ACME"],
+            "DKP": ["D1"],
+            "DKPC": ["D1C1"],
+            "Weight": [1.0],
+        }
+    )
+    result = load_live_data(_to_xlsx_bytes(df))
+    assert len(result.df) == 1
+    assert list(result.df["dkp_name"]) == [""]
+    assert any("DKP Name" in w for w in result.warnings)
 
 
 def test_load_live_data_missing_column_raises():

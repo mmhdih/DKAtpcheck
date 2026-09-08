@@ -173,6 +173,34 @@ def assign_bucket(sold_df: pd.DataFrame, bullion_categories: set[str]) -> pd.Dat
     return sold_df.assign(**{C.BUCKET: bucket})
 
 
+def attach_dkp_names(sold_df: pd.DataFrame, live_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Returns sold_df with a `dkp_name` column looked up from Live_Data by
+    DKP, so every DKP-bearing report can show the product name.
+
+    The lookup is deliberately marketplace-wide (keyed on DKP alone, not
+    on seller): a DKP is a marketplace product id, so a sold DKP that this
+    seller no longer has live — exactly the rows the Missing report is
+    about — still resolves its name from any other seller's live row. A
+    DKP nobody has live, or a Live_Data without the name column at all,
+    yields "" rather than dropping the row.
+
+    Like assign_bucket, this runs BEFORE ATPEngine.compute() so the name
+    rides through the per-DKPC/per-DKP dedup for free.
+    """
+    names = (
+        live_df.loc[live_df[C.DKP_NAME].astype(str) != "", [C.DKP, C.DKP_NAME]]
+        .drop_duplicates(subset=[C.DKP])
+        .set_index(C.DKP)[C.DKP_NAME]
+    )
+    resolved = sold_df[C.DKP].map(names).fillna("")
+    logger.info(
+        "Resolved product names for %d of %d sold row(s) from %d named live DKP(s).",
+        int((resolved != "").sum()), len(sold_df), len(names),
+    )
+    return sold_df.assign(**{C.DKP_NAME: resolved})
+
+
 # --------------------------------------------------------------------------- #
 # Engine
 # --------------------------------------------------------------------------- #
@@ -180,10 +208,10 @@ def assign_bucket(sold_df: pd.DataFrame, bullion_categories: set[str]) -> pd.Dat
 class ATPResult:
     """Everything downstream modules (summary/missing/seller_export) need."""
 
-    # columns: seller_id, seller, seller_key, dkp, dkpc, weight, category,
-    #          bucket, tail_badge, net_item_fcast, match_type, is_atp
+    # columns: seller_id, seller, seller_key, dkp, dkp_name, dkpc, weight,
+    #          category, bucket, tail_badge, net_item_fcast, match_type, is_atp
     dkpc_results: pd.DataFrame
-    # columns: seller_id, seller, seller_key, dkp, category, bucket, tail_badge, is_atp
+    # columns: seller_id, seller, seller_key, dkp, dkp_name, category, bucket, tail_badge, is_atp
     dkp_results: pd.DataFrame
 
 
@@ -247,10 +275,13 @@ class ATPEngine:
         )
 
         dkpc_cols = [
-            C.SELLER_ID, C.SELLER, C.SELLER_KEY, C.DKP, C.DKPC, C.WEIGHT,
+            C.SELLER_ID, C.SELLER, C.SELLER_KEY, C.DKP, C.DKP_NAME, C.DKPC, C.WEIGHT,
             C.CATEGORY, C.BUCKET, C.TAIL_BADGE, C.NET_ITEM_FCAST, "match_type", "is_atp",
         ]
-        dkp_cols = [C.SELLER_ID, C.SELLER, C.SELLER_KEY, C.DKP, C.CATEGORY, C.BUCKET, C.TAIL_BADGE, "is_atp"]
+        dkp_cols = [
+            C.SELLER_ID, C.SELLER, C.SELLER_KEY, C.DKP, C.DKP_NAME,
+            C.CATEGORY, C.BUCKET, C.TAIL_BADGE, "is_atp",
+        ]
 
         return ATPResult(
             dkpc_results=unique_dkpc[dkpc_cols],

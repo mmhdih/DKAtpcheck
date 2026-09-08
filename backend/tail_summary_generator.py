@@ -33,6 +33,14 @@ import pandas as pd
 from .atp_engine import ATPResult
 from .config import CanonicalColumns as C
 from .config import TailClassification
+from .report_labels import (
+    STATUS_AVAILABLE,
+    STATUS_COLORS,
+    STATUS_COLUMN,
+    STATUS_UNAVAILABLE,
+    TAIL_BADGE_COLORS,
+    TAIL_BADGE_COLUMN,
+)
 from .utils import dataframe_to_excel_bytes, get_logger, safe_filename_part
 
 logger = get_logger(__name__)
@@ -40,24 +48,9 @@ logger = get_logger(__name__)
 SELLER_ID_COLUMN = "Seller ID"
 SELLER_COLUMN = "Seller"
 DKP_COLUMN = "DKP"
+DKP_NAME_COLUMN = "DKP Name"
 CATEGORY_COLUMN = "Category"
 BUCKET_COLUMN = "Bucket"
-TAIL_BADGE_COLUMN = "Tail Badge"
-STATUS_COLUMN = "Status"
-STATUS_AVAILABLE = "Available"
-STATUS_UNAVAILABLE = "Unavailable"
-
-# Categorical cell-fill colors for the DKP-list export, matching the same
-# red/yellow/green visual language as the on-screen/exported color scales.
-_TAIL_BADGE_COLORS = {
-    TailClassification.ST: "63BE7B",  # green
-    TailClassification.MT: "FFEB84",  # yellow
-    TailClassification.LT: "F8696B",  # red
-}
-_STATUS_COLORS = {
-    STATUS_AVAILABLE: "63BE7B",  # green
-    STATUS_UNAVAILABLE: "F8696B",  # red
-}
 
 
 def _count_columns(badge: str) -> tuple[str, str]:
@@ -117,16 +110,16 @@ def tail_summary_to_excel_bytes(tail_summary_df: pd.DataFrame) -> bytes:
 def build_tail_dkp_list(result: ATPResult) -> pd.DataFrame:
     """
     Returns a flat DataFrame — one row per badged DKP across ALL sellers
-    combined (no per-seller split): Seller ID, Seller, DKP, Category,
-    Bucket, Tail Badge, Status (Available/Unavailable). Sorted by Seller
-    then DKP.
+    combined (no per-seller split): Seller ID, Seller, DKP, DKP Name,
+    Category, Bucket, Tail Badge, Status (Available/Unavailable). Sorted by
+    Seller then DKP.
     """
     df = result.dkp_results
     badged = df[df[C.TAIL_BADGE].isin(TailClassification.ALL)]
     if badged.empty:
         return pd.DataFrame(
             columns=[
-                SELLER_ID_COLUMN, SELLER_COLUMN, DKP_COLUMN,
+                SELLER_ID_COLUMN, SELLER_COLUMN, DKP_COLUMN, DKP_NAME_COLUMN,
                 CATEGORY_COLUMN, BUCKET_COLUMN, TAIL_BADGE_COLUMN, STATUS_COLUMN,
             ]
         )
@@ -136,6 +129,7 @@ def build_tail_dkp_list(result: ATPResult) -> pd.DataFrame:
             SELLER_ID_COLUMN: badged[C.SELLER_ID],
             SELLER_COLUMN: badged[C.SELLER],
             DKP_COLUMN: badged[C.DKP],
+            DKP_NAME_COLUMN: badged[C.DKP_NAME],
             CATEGORY_COLUMN: badged[C.CATEGORY],
             BUCKET_COLUMN: badged[C.BUCKET],
             TAIL_BADGE_COLUMN: badged[C.TAIL_BADGE],
@@ -157,8 +151,8 @@ def tail_dkp_list_to_excel_bytes(tail_dkp_list_df: pd.DataFrame) -> bytes:
         tail_dkp_list_df,
         sheet_name="Tail_DKP_List",
         categorical_color_columns={
-            TAIL_BADGE_COLUMN: _TAIL_BADGE_COLORS,
-            STATUS_COLUMN: _STATUS_COLORS,
+            TAIL_BADGE_COLUMN: TAIL_BADGE_COLORS,
+            STATUS_COLUMN: STATUS_COLORS,
         },
     )
 
@@ -171,8 +165,8 @@ def build_tail_dkp_zip(result: ATPResult) -> bytes:
     Returns:
         Raw .zip bytes containing one "<SellerID>-<SellerName>.xlsx" per
         seller with at least one badged DKP, each sheet listing that
-        seller's Seller ID, Seller, DKP, Category, Bucket, Tail Badge and
-        Status (Available/Unavailable) rows, sorted by DKP. Sellers with
+        seller's Seller ID, Seller, DKP, DKP Name, Category, Bucket, Tail
+        Badge and Status (Available/Unavailable) rows, sorted by DKP. Sellers with
         no badged DKPs at all (same exclusion rule as build_tail_dkp_list)
         get no file.
     """
@@ -187,8 +181,8 @@ def build_tail_dkp_zip(result: ATPResult) -> bytes:
                 group.reset_index(drop=True),
                 sheet_name="Tail_DKP_List",
                 categorical_color_columns={
-                    TAIL_BADGE_COLUMN: _TAIL_BADGE_COLORS,
-                    STATUS_COLUMN: _STATUS_COLORS,
+                    TAIL_BADGE_COLUMN: TAIL_BADGE_COLORS,
+                    STATUS_COLUMN: STATUS_COLORS,
                 },
             )
             filename = f"{safe_filename_part(seller_id)}-{safe_filename_part(seller_name)}.xlsx"

@@ -4,7 +4,7 @@ streamlit_app.py
 Thin UI client for the ATP Analyzer FastAPI backend. Contains no business
 logic: it uploads the two Excel files, lets the user set the weight
 tolerance plus the Bullion/Jewelry category split and Item-Tail (ST/MT/LT)
-filters, calls the backend, and renders the Summary / ATP_Missing results
+filters, calls the backend, and renders the Summary / ATP_DKPC results
 with download buttons (including the optional per-seller ZIP export).
 
 Run with:
@@ -395,7 +395,7 @@ if result:
     ]
 
     tab_summary, tab_missing, tab_tail, tab_seller_tail = st.tabs(
-        ["📊 Summary", "🔻 Seller ATP Missing", "🎯 Category ST/MT/LT PER Seller", "📮 Per-Seller Item-Tail"]
+        ["📊 Summary", "🔻 Seller ATP DKPC", "🎯 Category ST/MT/LT PER Seller", "📮 Per-Seller Item-Tail"]
     )
 
     with tab_summary:
@@ -419,38 +419,58 @@ if result:
         )
 
     with tab_missing:
+        st.caption(
+            "Same per-seller ST/MT/LT ranking and item selection as the **Per-Seller Item-Tail** "
+            "tab, but one row per **DKPC** (product variant) instead of per DKP — so availability "
+            "is the weight-aware DKPC-level result — and every row shows whether it is still "
+            "**Available** or has gone **Unavailable**. Within each seller, Unavailable rows come "
+            "first, then ST → MT → LT."
+        )
         missing_preview_df = pd.DataFrame(result["missing_preview"]).rename(
             columns={
                 "seller_id": "Seller ID", "seller": "Seller", "dkp": "DKP",
-                "dkpc": "DKPC", "category": "Category", "bucket": "Bucket",
+                "dkp_name": "DKP Name", "dkpc": "DKPC", "category": "Category",
+                "bucket": "Bucket", "tail_badge": "Tail Badge", "status": "Status",
             }
         )
         total = result["missing_total_count"]
+        unavailable = result.get("missing_unavailable_count", 0)
         if total == 0:
-            st.success("Every sold DKPC is ATP. Nothing to report.")
+            st.info(
+                "No sold DKPC has a resolvable Item-Tail badge (sum_net_item_fcast is zero/blank "
+                "for all of them)."
+            )
         else:
             shown = len(missing_preview_df)
             st.caption(
-                f"Showing {shown} of {total} row(s). Download the file for the complete list."
-                if shown < total else f"Showing all {total} row(s)."
+                f"{total} badged DKPC row(s) — {unavailable} unavailable, {total - unavailable} available."
+                + (
+                    f" Showing the first {shown}; download the file for the complete list."
+                    if shown < total else ""
+                )
             )
             st.dataframe(missing_preview_df, use_container_width=True, hide_index=True)
 
         dl_missing = requests.get(f"{API}/download/missing/{result['result_id']}", timeout=60)
         st.download_button(
-            "⬇ Download ATP_Missing.xlsx",
+            "⬇ Download ATP_DKPC.xlsx",
             data=dl_missing.content,
-            file_name="ATP_Missing.xlsx",
+            file_name="ATP_DKPC.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
 
         if meta.get("seller_zip_generated"):
+            st.divider()
+            st.caption(
+                "📮 Per-seller ZIP — the **Unavailable** rows of this table only (the actionable "
+                "\"make these live again\" hand-off), one xlsx per seller, plus each row's weight."
+            )
             dl_zip = requests.get(f"{API}/download/seller-zip/{result['result_id']}", timeout=60)
             st.download_button(
-                "⬇ Download per-seller ZIP (ATP_Missing_by_Seller.zip)",
+                "⬇ Download per-seller ZIP (ATP_DKPC_by_Seller.zip)",
                 data=dl_zip.content,
-                file_name="ATP_Missing_by_Seller.zip",
+                file_name="ATP_DKPC_by_Seller.zip",
                 mime="application/zip",
                 use_container_width=True,
             )

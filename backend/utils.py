@@ -160,7 +160,7 @@ class _CacheEntry:
 class ResultCache:
     """
     Thread-safe, in-memory, TTL-based cache mapping a result_id to the
-    computed DataFrames (Summary, ATP_Missing, Tail_Summary), so the
+    computed DataFrames (Summary, ATP_DKPC, Tail_Summary), so the
     download endpoints don't need to recompute the ATP pipeline.
 
     NOTE: this assumes a single backend process/worker. If the service is
