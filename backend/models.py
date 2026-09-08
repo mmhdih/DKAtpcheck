@@ -90,14 +90,22 @@ class SummaryRow(BaseModel):
 
 
 class MissingRow(BaseModel):
-    """One row of the ATP_Missing table — a sold DKPC that is not ATP."""
+    """
+    One row of the Seller ATP Missing table — a sold DKPC whose DKP is
+    badged in the seller's own Item-Tail ranking, with its weight-aware
+    DKPC-level availability shown as status (so both the still-live and
+    the gone-missing rows appear).
+    """
 
     seller_id: str
     seller: str
     dkp: str
+    dkp_name: str = ""
     dkpc: str
     category: str
     bucket: str
+    tail_badge: str
+    status: str
 
 
 class TailSummaryRow(BaseModel):
@@ -150,6 +158,9 @@ class CalculationResponse(BaseModel):
         ),
     )
     missing_total_count: int
+    missing_unavailable_count: int = Field(
+        0, description="How many of those rows are Unavailable (NOT ATP at the DKPC level)."
+    )
     tail_summary: list[TailSummaryRow] = Field(default_factory=list)
     seller_tail_summary: list[TailSummaryRow] = Field(default_factory=list)
     meta: CalculationMeta

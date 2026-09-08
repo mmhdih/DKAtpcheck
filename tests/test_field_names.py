@@ -50,6 +50,33 @@ def test_reset_field_names_reverts_everything():
     assert fn.get_field_names() == fn.DEFAULT_FIELD_NAMES
 
 
+def test_dkp_name_column_is_editable_and_defaults_to_dkp_name():
+    assert fn.DEFAULT_FIELD_NAMES["live_dkp_name"] == "DKP Name"
+    fn.save_field_names({"live_dkp_name": "Product Title"})
+    assert fn.get_field_names()["live_dkp_name"] == "Product Title"
+
+
+def test_excel_loader_honors_renamed_dkp_name_column():
+    fn.save_field_names({"live_dkp_name": "Product Title"})
+    df = pd.DataFrame(
+        {
+            "Seller_ID": ["S1"],
+            "Seller_Name": ["ACME"],
+            "DKP": ["D1"],
+            "Product Title": ["Gold bracelet"],
+            "DKPC": ["D1C1"],
+            "Weight": [2.5],
+        }
+    )
+    buf = BytesIO()
+    df.to_excel(buf, index=False, engine="openpyxl")
+    buf.seek(0)
+
+    result = load_live_data(buf)
+    assert list(result.df["dkp_name"]) == ["Gold bracelet"]
+    assert result.warnings == []
+
+
 def test_excel_loader_honors_saved_field_name_override():
     fn.save_field_names({"live_weight": "Renamed_Weight_Column"})
     df = pd.DataFrame(

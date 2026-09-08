@@ -16,6 +16,7 @@ def _dkp_row(seller_id, seller, badge, is_atp, **overrides) -> dict:
         C.SELLER: seller,
         C.SELLER_KEY: seller_id.casefold(),
         C.DKP: "D1",
+        C.DKP_NAME: "Gold bracelet",
         C.CATEGORY: "زیورآلات",
         C.BUCKET: CategoryBucket.JEWELRY,
         C.TAIL_BADGE: badge,
@@ -25,7 +26,10 @@ def _dkp_row(seller_id, seller, badge, is_atp, **overrides) -> dict:
     return row
 
 
-_DKP_COLUMNS = [C.SELLER_ID, C.SELLER, C.SELLER_KEY, C.DKP, C.CATEGORY, C.BUCKET, C.TAIL_BADGE, "is_atp"]
+_DKP_COLUMNS = [
+    C.SELLER_ID, C.SELLER, C.SELLER_KEY, C.DKP, C.DKP_NAME,
+    C.CATEGORY, C.BUCKET, C.TAIL_BADGE, "is_atp",
+]
 
 
 def _result(dkp_rows: list[dict]) -> ATPResult:
@@ -114,7 +118,7 @@ def test_dkp_list_includes_status_and_badge_columns():
     assert row["Tail Badge"] == TailClassification.ST
     assert row["Status"] == "Available"
     assert list(listing.columns) == [
-        "Seller ID", "Seller", "DKP", "Category", "Bucket", "Tail Badge", "Status",
+        "Seller ID", "Seller", "DKP", "DKP Name", "Category", "Bucket", "Tail Badge", "Status",
     ]
 
 
@@ -137,7 +141,7 @@ def test_dkp_list_empty_result_returns_expected_columns():
     listing = build_tail_dkp_list(_result([]))
     assert listing.empty
     assert list(listing.columns) == [
-        "Seller ID", "Seller", "DKP", "Category", "Bucket", "Tail Badge", "Status",
+        "Seller ID", "Seller", "DKP", "DKP Name", "Category", "Bucket", "Tail Badge", "Status",
     ]
 
 
@@ -179,7 +183,7 @@ def test_dkp_zip_sheet_matches_flat_listing_columns_for_that_seller():
 
     seller_1_sheet = next(v for k, v in sheets.items() if k.startswith("S1-"))
     assert list(seller_1_sheet.columns) == [
-        "Seller ID", "Seller", "DKP", "Category", "Bucket", "Tail Badge", "Status",
+        "Seller ID", "Seller", "DKP", "DKP Name", "Category", "Bucket", "Tail Badge", "Status",
     ]
     assert set(seller_1_sheet["DKP"]) == {"D1", "D2"}
     assert set(seller_1_sheet["Seller ID"]) == {"S1"}

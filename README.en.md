@@ -39,10 +39,11 @@ filtered every way a merchandising team would need.
 
 **📤 What it can output (4 tabs in the UI):**
 - 📊 **Summary** — one row per seller: 4 ATP percentages (Bullion/Jewelry × DKPC/DKP). Color-coded 🔴🟡🟢 on screen and in the downloaded `.xlsx`.
-- 🔻 **Seller ATP Missing** — the full list of sold DKPCs that are NOT ATP, with category and bucket. Kept plain/uncolored on purpose, for easy reading of a raw list.
-  - 📦 **Per-seller ZIP export (opt-in)** — one `SellerID-SellerName.xlsx` per
-    seller listing their unavailable items (weight, category, bucket, tail
-    badge included), ready to email straight to each seller.
+- 🔻 **Seller ATP Missing** — the **DKPC-level** counterpart of the Per-Seller Item-Tail tab: same item selection and same per-seller ST/MT/LT badge, but one row per **variant (DKPC)** with the weight-aware DKPC-level availability, and every row showing its **Available / Unavailable** status — so what is still live sits next to what has gone missing (per seller: Unavailable first, then ST → MT → LT). Color-coded by badge and status.
+  - 📦 **Per-seller ZIP export (opt-in)** — the same rows narrowed to the
+    **Unavailable** ones (the actionable "make these live again" hand-off):
+    one `SellerID-SellerName.xlsx` per seller with product name, weight,
+    category, bucket and tail badge, ready to email straight to each seller.
 - 🎯 **Category ST/MT/LT PER Seller** — the marketplace-wide tail badge (above), two outputs in one tab:
   - an **overall table**: DKP counts per seller, per tail badge, split into available/unavailable (color-coded);
   - an **item list**: every badged DKP across *all* sellers combined in a single flat `.xlsx` (color-coded by badge/status) — no per-seller split, just the raw list.
@@ -67,7 +68,8 @@ atp_analyzer/
 │   ├── atp_engine.py           the ATP rule pipeline (the core)
 │   ├── tail_classifier.py      ST/MT/LT Item-Tail classification — both marketplace-wide and per-seller variants
 │   ├── summary_generator.py    builds the Summary table
-│   ├── missing_generator.py    builds the ATP_Missing table
+│   ├── missing_generator.py    builds the Seller ATP Missing table (DKPC level, with status)
+│   ├── report_labels.py        shared Available/Unavailable wording + badge/status colors
 │   ├── tail_summary_generator.py builds the overall table, flat DKP list, and per-seller ZIP for BOTH tail tabs
 │   ├── seller_export.py        per-seller NOT-ATP ZIP export (ATP Missing tab)
 │   └── templates.py            downloadable example Live_Data/Sold_Data templates
@@ -125,6 +127,7 @@ purely for display and is never used to match rows across files.
 | `Seller_Name` | `marketplace_seller_name` | `seller` | display only |
 | `DKP` | `product_id` | `dkp` | |
 | `DKPC` | `product_variant_id` | `dkpc` | |
+| `DKP Name` | — | `dkp_name` | **optional** product name, report-only; looked up per DKP (see below) |
 | `Weight` | `product_variant_name_fa` | `weight` | parsed via the same numeric/"`<n> گرم`" logic on both sides |
 | — | `category_name_fa` | `category` | Sold_Data only; drives the Bullion/Jewelry bucket |
 | — | `sum_net_item_fcast` | `net_item_fcast` | Sold_Data only; drives the ST/MT/LT tail badge |
@@ -134,6 +137,15 @@ example templates straight from the app (`⬇ Live_Data template` /
 `⬇ Sold_Data template` buttons, or `GET /api/v1/templates/live-data` /
 `GET /api/v1/templates/sold-data`) so column names never have to be
 guessed.
+
+The **product name** (`DKP Name`) is read from the assortment
+(Live_Data) and shown next to the DKP in every DKP-bearing output. The
+column is optional: without it the file still loads, you get a warning
+and the name column comes out blank. The lookup is keyed on the **DKP
+alone, not on the seller**, because a DKP is a marketplace-wide product
+id — that is what lets a seller's *unavailable* items (exactly what the
+Missing report is about) still resolve their name from another seller's
+live row. A DKP nobody has live stays blank.
 
 If a seller renames one of these raw columns (e.g. the weight column
 above used to be `Size_Name` and is now `Weight`), no code change is
@@ -226,9 +238,11 @@ assumptions* below).
 Set `generate_seller_zip=true` on `/calculate` to also build a ZIP
 (downloaded via `GET /api/v1/download/seller-zip/{result_id}`) containing
 one `SellerID-SellerName.xlsx` per seller — that seller's NOT-ATP DKPCs
-with Weight, Category, Bucket, and Tail Badge, sorted by that row's own
-`sum_net_item_fcast` descending (the number itself isn't included in the
-output; rows with a zero/blank value are excluded entirely). Meant for
+with DKP Name, Weight, Category, Bucket, and Tail Badge, sorted by that
+row's own `sum_net_item_fcast` descending (the number itself isn't
+included in the output). It is exactly the Unavailable slice of the Seller
+ATP Missing table, so the same identification rule applies: a DKP with no
+badge at all (zero/blank forecast volume) is excluded here too. Meant for
 emailing each seller their own actionable list. It's opt-in and only
 built when requested, since it's extra work on top of the normal
 Summary/Missing calculation.
@@ -282,8 +296,9 @@ ST/MT/LT and Per-Seller Item-Tail) use a 🔴🟡🟢 red→yellow→green color
 scale (same visual language on screen and in the downloaded `.xlsx`, via
 openpyxl conditional formatting). Both tail tabs' item-list files use
 solid categorical colors instead (ST=green, MT=yellow, LT=red;
-Available=green, Unavailable=red). **Seller ATP Missing is deliberately
-left uncolored** — it's meant to be read as a plain, scannable raw list.
+Available=green, Unavailable=red). **Seller ATP Missing** uses those same
+categorical colors (badge and status), now that it shows live and missing
+rows side by side.
 
 ## 🚀 Performance
 

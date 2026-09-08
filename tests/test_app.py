@@ -39,6 +39,7 @@ def _live_bytes() -> bytes:
                 "Seller_ID": ["S1", "S1"],
                 "Seller_Name": ["ACME", "ACME"],
                 "DKP": ["D1", "D2"],
+                "DKP Name": ["Gold bracelet", "Silver ring"],
                 "DKPC": ["D1C1", "D2C1"],
                 "Weight": [1.0, 2.0],
             }
@@ -291,6 +292,93 @@ def test_templates_endpoints_return_xlsx():
         response = client.get(path)
         assert response.status_code == 200
         assert response.content
+
+
+def test_missing_preview_lists_both_statuses_with_badge_and_product_name():
+    body = _calculate().json()
+    rows = {row["dkpc"]: row for row in body["missing_preview"]}
+    # D1C1 is live in Live_Data; D9C1 is not.
+    assert rows["D1C1"]["status"] == "Available"
+    assert rows["D9C1"]["status"] == "Unavailable"
+    assert rows["D1C1"]["dkp_name"] == "Gold bracelet"
+    # D9 is nowhere in Live_Data, so its name can't be resolved.
+    assert rows["D9C1"]["dkp_name"] == ""
+    assert rows["D1C1"]["tail_badge"] in {"ST", "MT", "LT"}
+    assert body["missing_total_count"] == 2
+    assert body["missing_unavailable_count"] == 1
+
+
+def test_missing_excludes_dkpcs_with_no_forecast_volume():
+    sold_rows = [
+        {
+            "marketplace_seller_id": "S1", "marketplace_seller_name": "ACME",
+            "product_id": "D1", "product_variant_id": "D1C1",
+            "product_variant_name_fa": 1.0, "category_name_fa": "",
+            "sum_net_item_fcast": 5,
+        },
+        {
+            "marketplace_seller_id": "S1", "marketplace_seller_name": "ACME",
+            "product_id": "D2", "product_variant_id": "D2C1",
+            "product_variant_name_fa": 2.0, "category_name_fa": "",
+            "sum_net_item_fcast": 0,
+        },
+    ]
+    response = client.post(
+        "/api/v1/calculate",
+        files={
+            "live_file": ("Live_Data.xlsx", _live_bytes()),
+            "sold_file": ("Sold_Data.xlsx", _xlsx_bytes(pd.DataFrame(sold_rows))),
+        },
+        data={"tolerance_pct": 10},
+    )
+    assert response.status_code == 200
+    listed = [row["dkpc"] for row in response.json()["missing_preview"]]
+    assert listed == ["D1C1"]
+
+
+def test_missing_uses_the_per_seller_badge_not_the_marketplace_one():
+    # (S1,D1)=10, (S2,DBIG)=100, (S2,DSMALL)=1 in one bucket. Marketplace-wide
+    # S1's DKP sits at 90% of accumulated volume -> LT; ranked within S1's own
+    # sales it is their only item -> ST. The Missing tab must show ST.
+    sold_rows = [
+        {
+            "marketplace_seller_id": "S1", "marketplace_seller_name": "ACME",
+            "product_id": "D1", "product_variant_id": "D1C1",
+            "product_variant_name_fa": 1.0, "category_name_fa": "",
+            "sum_net_item_fcast": 10,
+        },
+        {
+            "marketplace_seller_id": "S2", "marketplace_seller_name": "Beta",
+            "product_id": "DBIG", "product_variant_id": "DBIGC1",
+            "product_variant_name_fa": 1.0, "category_name_fa": "",
+            "sum_net_item_fcast": 100,
+        },
+        {
+            "marketplace_seller_id": "S2", "marketplace_seller_name": "Beta",
+            "product_id": "DSMALL", "product_variant_id": "DSMALLC1",
+            "product_variant_name_fa": 1.0, "category_name_fa": "",
+            "sum_net_item_fcast": 1,
+        },
+    ]
+    response = client.post(
+        "/api/v1/calculate",
+        files={
+            "live_file": ("Live_Data.xlsx", _live_bytes()),
+            "sold_file": ("Sold_Data.xlsx", _xlsx_bytes(pd.DataFrame(sold_rows))),
+        },
+        data={"tolerance_pct": 10},
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    s1_row = next(row for row in body["missing_preview"] if row["seller_id"] == "S1")
+    assert s1_row["tail_badge"] == "ST"
+
+    # Same seller, same DKP, marketplace-wide ranking: LT (and available,
+    # since S1/D1 is live) — proving the two tabs really do rank differently.
+    s1_marketplace = next(row for row in body["tail_summary"] if row["seller_id"] == "S1")
+    assert s1_marketplace["lt_available"] == 1
+    assert s1_marketplace["st_available"] == 0
 
 
 def test_get_field_names_returns_defaults():

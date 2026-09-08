@@ -36,11 +36,12 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from .atp_engine import ATPEngine, ATPIndex, ATPResult, assign_bucket
+from .atp_engine import ATPEngine, ATPIndex, ATPResult, assign_bucket, attach_dkp_names
 from .config import CanonicalColumns, TailClassification, get_settings
 from .excel_loader import ExcelValidationError, load_live_data, load_sold_data
 from .field_names import DEFAULT_FIELD_NAMES, FIELD_LABELS, get_field_names, reset_field_names, save_field_names
 from .missing_generator import build_missing, missing_to_excel_bytes
+from .report_labels import STATUS_COLUMN, STATUS_UNAVAILABLE
 from .models import (
     CalculationMeta,
     CalculationResponse,
@@ -114,6 +115,19 @@ def public_config() -> dict:
         "max_upload_size_mb": settings.max_upload_size_mb,
         "tail_badges": list(TailClassification.ALL),
     }
+
+
+def _with_per_seller_badges(results_df, seller_tail_by_dkp):
+    """
+    Swap a results frame's marketplace-wide `tail_badge` for the
+    per-seller-ranked badge of the same (seller, DKP). Works for both the
+    DKPC-level and DKP-level frames — the badge is a DKP-level concept, so
+    every DKPC under one DKP inherits that DKP's badge. An unbadged DKP
+    (zero/blank forecast volume) stays unbadged (NaN) after the left join.
+    """
+    return results_df.drop(columns=[CanonicalColumns.TAIL_BADGE]).merge(
+        seller_tail_by_dkp, on=[CanonicalColumns.SELLER_KEY, CanonicalColumns.DKP], how="left"
+    )
 
 
 def _field_names_response() -> FieldNamesResponse:
@@ -218,6 +232,10 @@ async def calculate(
         # depends on volume in the other bucket.
         sold_df = assign_bucket(sold_df, bullion_categories=set(bullion_categories))
 
+        # Product names ride along from here so every DKP-bearing report
+        # can show them without re-reading Live_Data.
+        sold_df = attach_dkp_names(sold_df, live_result.df)
+
         # Per-seller ranking is computed on the FULL bucketed universe (a
         # seller's own Pareto curve must reflect their true sales mix, not
         # whatever the marketplace-wide tail_badges filter below happens
@@ -240,27 +258,26 @@ async def calculate(
         atp_result = engine.compute(sold_df)
 
         summary_df = build_summary(atp_result)
-        missing_df = build_missing(atp_result)
         tail_summary_df = build_tail_summary(atp_result)
         tail_dkp_list_df = build_tail_dkp_list(atp_result)
 
-        # Standalone "Per-Seller Item-Tail" tab: same dkp_results rows (so
-        # it respects the same marketplace-wide tail_badges filter and ATP
-        # outcome as every other tab), but with the tail_badge column
-        # swapped for the per-seller-ranked one instead of the
-        # marketplace-wide one.
-        seller_scoped_dkp_results = atp_result.dkp_results.drop(
-            columns=[CanonicalColumns.TAIL_BADGE]
-        ).merge(
-            seller_tail_by_dkp, on=[CanonicalColumns.SELLER_KEY, CanonicalColumns.DKP], how="left"
-        )
+        # Per-seller-ranked view of the same rows (so it respects the same
+        # marketplace-wide tail_badges filter and ATP outcome as every
+        # other tab), with the tail_badge column swapped for the
+        # per-seller-ranked badge instead of the marketplace-wide one.
+        # Feeds both the standalone "Per-Seller Item-Tail" tab (DKP level)
+        # and the "Seller ATP Missing" tab (DKPC level).
         seller_scoped_result = ATPResult(
-            dkpc_results=atp_result.dkpc_results, dkp_results=seller_scoped_dkp_results
+            dkpc_results=_with_per_seller_badges(atp_result.dkpc_results, seller_tail_by_dkp),
+            dkp_results=_with_per_seller_badges(atp_result.dkp_results, seller_tail_by_dkp),
         )
         seller_tail_summary_df = build_tail_summary(seller_scoped_result)
         seller_tail_dkp_list_df = build_tail_dkp_list(seller_scoped_result)
 
-        seller_zip_bytes = build_seller_missing_zip(atp_result) if generate_seller_zip else None
+        missing_df = build_missing(seller_scoped_result)
+        seller_zip_bytes = (
+            build_seller_missing_zip(seller_scoped_result) if generate_seller_zip else None
+        )
         seller_tail_zip_bytes = (
             build_tail_dkp_zip(seller_scoped_result) if generate_seller_tail_zip else None
         )
@@ -316,17 +333,22 @@ async def calculate(
             )
         ],
         missing_preview=[
-            MissingRow(seller_id=sid, seller=s, dkp=dkp, dkpc=dkpc, category=cat, bucket=bkt)
-            for sid, s, dkp, dkpc, cat, bkt in zip(
-                missing_df["Seller ID"].head(_MISSING_PREVIEW_ROWS),
-                missing_df["Seller"].head(_MISSING_PREVIEW_ROWS),
-                missing_df["DKP"].head(_MISSING_PREVIEW_ROWS),
-                missing_df["DKPC"].head(_MISSING_PREVIEW_ROWS),
-                missing_df["Category"].head(_MISSING_PREVIEW_ROWS),
-                missing_df["Bucket"].head(_MISSING_PREVIEW_ROWS),
+            MissingRow(
+                seller_id=sid, seller=s, dkp=dkp, dkp_name=name, dkpc=dkpc,
+                category=cat, bucket=bkt, tail_badge=badge, status=status,
+            )
+            for sid, s, dkp, name, dkpc, cat, bkt, badge, status in zip(
+                *(
+                    missing_df[column].head(_MISSING_PREVIEW_ROWS)
+                    for column in (
+                        "Seller ID", "Seller", "DKP", "DKP Name", "DKPC",
+                        "Category", "Bucket", "Tail Badge", "Status",
+                    )
+                )
             )
         ],
         missing_total_count=len(missing_df),
+        missing_unavailable_count=int((missing_df[STATUS_COLUMN] == STATUS_UNAVAILABLE).sum()),
         tail_summary=[
             TailSummaryRow(
                 seller_id=sid, seller=s,
