@@ -3,7 +3,7 @@ seller_export.py
 -----------------
 Builds a ZIP of one styled .xlsx per Seller ID, listing that seller's
 NOT-ATP sold DKPCs — the actionable "make these live again" hand-off cut
-of the on-screen Seller ATP Missing table: the same badged rows carrying
+of the on-screen Seller ATP DKPC table: the same badged rows carrying
 the same per-seller Item-Tail badge, narrowed to the Unavailable ones and
 enriched with Weight. Rows whose DKP has no badge at all (zero/blank
 forecast volume) are excluded, exactly as they are from that table; the

@@ -395,7 +395,7 @@ if result:
     ]
 
     tab_summary, tab_missing, tab_tail, tab_seller_tail = st.tabs(
-        ["📊 Summary", "🔻 Seller ATP Missing", "🎯 Category ST/MT/LT PER Seller", "📮 Per-Seller Item-Tail"]
+        ["📊 Summary", "🔻 Seller ATP DKPC", "🎯 Category ST/MT/LT PER Seller", "📮 Per-Seller Item-Tail"]
     )
 
     with tab_summary:

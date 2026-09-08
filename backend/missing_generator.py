@@ -1,7 +1,7 @@
 """
 missing_generator.py
 ----------------------
-Builds the "Seller ATP Missing" table: the DKPC-level counterpart of the
+Builds the "Seller ATP DKPC" table: the DKPC-level counterpart of the
 Per-Seller Item-Tail report.
 
 Items are identified exactly the way that report identifies them — one
@@ -98,7 +98,7 @@ def build_missing(result: ATPResult) -> pd.DataFrame:
 
     unavailable = int((listing[STATUS_COLUMN] == STATUS_UNAVAILABLE).sum())
     logger.info(
-        "Built Seller ATP Missing with %d badged DKPC row(s) (%d unavailable).",
+        "Built Seller ATP DKPC with %d badged DKPC row(s) (%d unavailable).",
         len(listing), unavailable,
     )
     return listing

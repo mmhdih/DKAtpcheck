@@ -91,7 +91,7 @@ class SummaryRow(BaseModel):
 
 class MissingRow(BaseModel):
     """
-    One row of the Seller ATP Missing table — a sold DKPC whose DKP is
+    One row of the Seller ATP DKPC table — a sold DKPC whose DKP is
     badged in the seller's own Item-Tail ranking, with its weight-aware
     DKPC-level availability shown as status (so both the still-live and
     the gone-missing rows appear).

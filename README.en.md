@@ -39,7 +39,7 @@ filtered every way a merchandising team would need.
 
 **📤 What it can output (4 tabs in the UI):**
 - 📊 **Summary** — one row per seller: 4 ATP percentages (Bullion/Jewelry × DKPC/DKP). Color-coded 🔴🟡🟢 on screen and in the downloaded `.xlsx`.
-- 🔻 **Seller ATP Missing** — the **DKPC-level** counterpart of the Per-Seller Item-Tail tab: same item selection and same per-seller ST/MT/LT badge, but one row per **variant (DKPC)** with the weight-aware DKPC-level availability, and every row showing its **Available / Unavailable** status — so what is still live sits next to what has gone missing (per seller: Unavailable first, then ST → MT → LT). Color-coded by badge and status.
+- 🔻 **Seller ATP DKPC** — the **DKPC-level** counterpart of the Per-Seller Item-Tail tab: same item selection and same per-seller ST/MT/LT badge, but one row per **variant (DKPC)** with the weight-aware DKPC-level availability, and every row showing its **Available / Unavailable** status — so what is still live sits next to what has gone missing (per seller: Unavailable first, then ST → MT → LT). Color-coded by badge and status.
   - 📦 **Per-seller ZIP export (opt-in)** — the same rows narrowed to the
     **Unavailable** ones (the actionable "make these live again" hand-off):
     one `SellerID-SellerName.xlsx` per seller with product name, weight,
@@ -68,7 +68,7 @@ atp_analyzer/
 │   ├── atp_engine.py           the ATP rule pipeline (the core)
 │   ├── tail_classifier.py      ST/MT/LT Item-Tail classification — both marketplace-wide and per-seller variants
 │   ├── summary_generator.py    builds the Summary table
-│   ├── missing_generator.py    builds the Seller ATP Missing table (DKPC level, with status)
+│   ├── missing_generator.py    builds the Seller ATP DKPC table (DKPC level, with status)
 │   ├── report_labels.py        shared Available/Unavailable wording + badge/status colors
 │   ├── tail_summary_generator.py builds the overall table, flat DKP list, and per-seller ZIP for BOTH tail tabs
 │   ├── seller_export.py        per-seller NOT-ATP ZIP export (ATP Missing tab)
@@ -296,7 +296,7 @@ ST/MT/LT and Per-Seller Item-Tail) use a 🔴🟡🟢 red→yellow→green color
 scale (same visual language on screen and in the downloaded `.xlsx`, via
 openpyxl conditional formatting). Both tail tabs' item-list files use
 solid categorical colors instead (ST=green, MT=yellow, LT=red;
-Available=green, Unavailable=red). **Seller ATP Missing** uses those same
+Available=green, Unavailable=red). **Seller ATP DKPC** uses those same
 categorical colors (badge and status), now that it shows live and missing
 rows side by side.
 

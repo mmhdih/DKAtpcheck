@@ -5,7 +5,7 @@ The shared reporting vocabulary used by more than one output generator:
 the Available/Unavailable status wording and the cell-fill colors for the
 Item-Tail badge and that status.
 
-Kept in one place so the Seller ATP Missing (DKPC-level) and Item-Tail
+Kept in one place so the Seller ATP DKPC (DKPC-level) and Item-Tail
 (DKP-level) exports can never drift into different wording or different
 colors for the same concept.
 """

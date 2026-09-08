@@ -41,7 +41,6 @@ from .config import CanonicalColumns, TailClassification, get_settings
 from .excel_loader import ExcelValidationError, load_live_data, load_sold_data
 from .field_names import DEFAULT_FIELD_NAMES, FIELD_LABELS, get_field_names, reset_field_names, save_field_names
 from .missing_generator import build_missing, missing_to_excel_bytes
-from .report_labels import STATUS_COLUMN, STATUS_UNAVAILABLE
 from .models import (
     CalculationMeta,
     CalculationResponse,
@@ -54,6 +53,7 @@ from .models import (
     SummaryRow,
     TailSummaryRow,
 )
+from .report_labels import STATUS_COLUMN, STATUS_UNAVAILABLE
 from .seller_export import build_seller_missing_zip
 from .summary_generator import build_summary, summary_to_excel_bytes
 from .tail_classifier import classify_tails, classify_tails_per_seller
@@ -266,7 +266,7 @@ async def calculate(
         # other tab), with the tail_badge column swapped for the
         # per-seller-ranked badge instead of the marketplace-wide one.
         # Feeds both the standalone "Per-Seller Item-Tail" tab (DKP level)
-        # and the "Seller ATP Missing" tab (DKPC level).
+        # and the "Seller ATP DKPC" tab (DKPC level).
         seller_scoped_result = ATPResult(
             dkpc_results=_with_per_seller_badges(atp_result.dkpc_results, seller_tail_by_dkp),
             dkp_results=_with_per_seller_badges(atp_result.dkp_results, seller_tail_by_dkp),
