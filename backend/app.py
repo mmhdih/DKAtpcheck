@@ -226,6 +226,7 @@ async def calculate(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         sold_df = sold_result.df
+        pipeline_warnings: list[str] = []
 
         # Bucket must be assigned before tail classification: ST/MT/LT is
         # ranked separately within each bucket, so a DKP's badge never
@@ -235,6 +236,19 @@ async def calculate(
         # Product names ride along from here so every DKP-bearing report
         # can show them without re-reading Live_Data.
         sold_df = attach_dkp_names(sold_df, live_result.df)
+
+        # A name column that is present AND populated can still leave every
+        # report blank, if no sold DKP appears in Live_Data at all. Say so
+        # rather than letting an empty column speak for itself — but only
+        # when Live_Data really had names to give, since the loader already
+        # explains a missing or empty name column itself.
+        live_has_names = (live_result.df[CanonicalColumns.DKP_NAME] != "").any()
+        if live_has_names and len(sold_df) and not (sold_df[CanonicalColumns.DKP_NAME] != "").any():
+            pipeline_warnings.append(
+                "DKP Name is blank for every row: none of the sold DKPs appear in Live_Data, so "
+                "no product name could be looked up. Check that the two files cover the same "
+                "period/products."
+            )
 
         # Per-seller ranking is computed on the FULL bucketed universe (a
         # seller's own Pareto curve must reflect their true sales mix, not
@@ -293,7 +307,7 @@ async def calculate(
         seller_tail_zip_bytes=seller_tail_zip_bytes,
     )
 
-    warnings = live_result.warnings + sold_result.warnings
+    warnings = live_result.warnings + sold_result.warnings + pipeline_warnings
     meta = CalculationMeta(
         live_rows_loaded=len(live_result.df),
         sold_rows_loaded=len(sold_result.df),

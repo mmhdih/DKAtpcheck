@@ -138,6 +138,14 @@ example templates straight from the app (`⬇ Live_Data template` /
 `GET /api/v1/templates/sold-data`) so column names never have to be
 guessed.
 
+**Column names are matched leniently**: case, `_`/`-`/space separators
+and stray leading/trailing padding are ignored, so `DKP Name`,
+`DKP_Name`, `DKP NAME`, `dkp name` and `"DKP Name "` all resolve to the
+same column. The product-name column additionally falls back to a few
+spellings exports are known to use (`Product Name`, `نام کالا`, …). When
+nothing matches, that run's warnings list **the file's actual headers**,
+so the right one can be set in Settings without guessing.
+
 The **product name** (`DKP Name`) is read from the assortment
 (Live_Data) and shown next to the DKP in every DKP-bearing output. The
 column is optional: without it the file still loads, you get a warning

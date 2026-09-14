@@ -21,13 +21,14 @@ Performance notes:
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from io import BytesIO
-from typing import BinaryIO
+from typing import Any, BinaryIO, Iterable
 
 import pandas as pd
 
-from .config import CanonicalColumns, get_settings
+from .config import CanonicalColumns, LiveDataColumns, get_settings
 from .field_names import get_field_names
 from .utils import get_logger, normalize_id, normalize_text
 from .weight_parser import to_numeric_weight
@@ -105,13 +106,77 @@ def _read_tabular_any_engine(
     )
 
 
-def _require_columns(df: pd.DataFrame, required: tuple[str, ...], *, source_name: str) -> None:
-    missing = [c for c in required if c not in df.columns]
+_HEADER_SEPARATOR_RE = re.compile(r"[\s_\-]+")
+
+
+def _header_key(value: Any) -> str:
+    """
+    Fold a column header down to a comparison key: normalize_text (NFKC,
+    Persian/Arabic look-alikes unified, whitespace collapsed and trimmed),
+    then '_'/'-'/space runs collapsed to a single space, case folded.
+
+    So "DKP_Name", "DKP NAME", "dkp name" and a stray-trailing-space
+    "DKP Name " all key to "dkp name". Exports rename columns cosmetically
+    all the time; a header that differs only in case, separator or padding
+    is the same column, and silently treating it as absent is how a whole
+    column comes out blank.
+    """
+    return _HEADER_SEPARATOR_RE.sub(" ", normalize_text(value)).strip().casefold()
+
+
+class _HeaderResolver:
+    """
+    Maps the column names the app is configured to look for onto the
+    headers a given file actually has.
+
+    An exact hit always wins; otherwise a single header with the same
+    folded key (see _header_key) is accepted. Two headers folding to the
+    same key is genuine ambiguity, so neither is picked — the caller then
+    reports the column as missing rather than guessing.
+    """
+
+    def __init__(self, df: pd.DataFrame) -> None:
+        self.columns: list[str] = [str(c) for c in df.columns]
+        self._by_key: dict[str, list[str]] = {}
+        for column in df.columns:
+            self._by_key.setdefault(_header_key(column), []).append(column)
+
+    def resolve(self, configured: str) -> str | None:
+        if configured in self._by_key.get(_header_key(configured), []):
+            return configured
+        matches = self._by_key.get(_header_key(configured), [])
+        return matches[0] if len(matches) == 1 else None
+
+    def resolve_any(self, candidates: Iterable[str]) -> str | None:
+        """First of `candidates` that resolves, or None if none do."""
+        for candidate in candidates:
+            resolved = self.resolve(candidate)
+            if resolved is not None:
+                return resolved
+        return None
+
+
+def _resolve_required(
+    resolver: _HeaderResolver, configured: dict[str, str], *, source_name: str
+) -> dict[str, str]:
+    """
+    Resolve every required field to a real header, or raise listing both
+    what was expected and what the file actually has.
+    """
+    resolved = {key: resolver.resolve(name) for key, name in configured.items()}
+    missing = [configured[key] for key, actual in resolved.items() if actual is None]
     if missing:
         raise ExcelValidationError(
             f"'{source_name}' is missing required column(s): {missing}. "
-            f"Found columns: {list(df.columns)}"
+            f"Found columns: {resolver.columns}"
         )
+    for key, actual in resolved.items():
+        if actual != configured[key]:
+            logger.info(
+                "%s: matched configured column '%s' to header '%s'.",
+                source_name, configured[key], actual,
+            )
+    return resolved  # type: ignore[return-value]
 
 
 def _drop_missing_identifiers(
@@ -137,35 +202,52 @@ def load_live_data(file: BinaryIO | bytes, *, filename: str | None = None) -> Lo
     """
     warnings: list[str] = []
     names = get_field_names()
-    required = (
-        names["live_seller_id"], names["live_seller"],
-        names["live_dkp"], names["live_dkpc"], names["live_weight"],
-    )
     raw_df = _read_tabular_any_engine(file, source_name="Live_Data", filename=filename)
-    _require_columns(raw_df, required, source_name="Live_Data")
+    resolver = _HeaderResolver(raw_df)
+    columns = _resolve_required(
+        resolver,
+        {key: names[key] for key in
+         ("live_seller_id", "live_seller", "live_dkp", "live_dkpc", "live_weight")},
+        source_name="Live_Data",
+    )
 
-    weight_source_col = names["live_weight"]
+    # The raw weight text is parked under the canonical source_text name
+    # (same as the Sold_Data loader) rather than under its own header: a
+    # file whose weight column is literally called "weight" would otherwise
+    # collide with the canonical weight column and get dropped with it.
+    weight_source_col = columns["live_weight"]
     df = pd.DataFrame(
         {
-            CanonicalColumns.SELLER_ID: raw_df[names["live_seller_id"]].map(normalize_id),
-            CanonicalColumns.SELLER: raw_df[names["live_seller"]].map(normalize_text),
-            CanonicalColumns.DKP: raw_df[names["live_dkp"]].map(normalize_id),
-            CanonicalColumns.DKPC: raw_df[names["live_dkpc"]].map(normalize_id),
-            weight_source_col: raw_df[weight_source_col],
+            CanonicalColumns.SELLER_ID: raw_df[columns["live_seller_id"]].map(normalize_id),
+            CanonicalColumns.SELLER: raw_df[columns["live_seller"]].map(normalize_text),
+            CanonicalColumns.DKP: raw_df[columns["live_dkp"]].map(normalize_id),
+            CanonicalColumns.DKPC: raw_df[columns["live_dkpc"]].map(normalize_id),
+            CanonicalColumns.SOURCE_TEXT: raw_df[weight_source_col],
         }
     )
 
     # Product name is report-only enrichment, never a matching input, so a
-    # file without that column loads fine — names just come out blank.
-    dkp_name_col = names["live_dkp_name"]
-    if dkp_name_col in raw_df.columns:
-        df[CanonicalColumns.DKP_NAME] = raw_df[dkp_name_col].map(normalize_text)
-    else:
+    # file without that column loads fine — names just come out blank. The
+    # configured name is tried first, then the spellings assortment
+    # exports are known to use, since a wrong guess here can only affect
+    # what a report displays.
+    dkp_name_col = resolver.resolve(names["live_dkp_name"]) or resolver.resolve_any(
+        LiveDataColumns.DKP_NAME_ALIASES
+    )
+    if dkp_name_col is None:
         df[CanonicalColumns.DKP_NAME] = ""
         warnings.append(
-            f"Live_Data: no '{dkp_name_col}' column found — product names will be blank in the "
-            f"outputs. Rename the column in the file, or fix its name in Settings."
+            f"Live_Data: no product-name column found (looked for '{names['live_dkp_name']}'), "
+            f"so DKP Name will be blank in every output. The file's columns are: "
+            f"{resolver.columns}. Put the right one in Settings → column names."
         )
+    else:
+        df[CanonicalColumns.DKP_NAME] = raw_df[dkp_name_col].map(normalize_text)
+        if not (df[CanonicalColumns.DKP_NAME] != "").any():
+            warnings.append(
+                f"Live_Data: the product-name column '{dkp_name_col}' is present but empty in "
+                f"every row, so DKP Name will be blank in every output."
+            )
 
     df = _drop_missing_identifiers(
         df,
@@ -175,7 +257,7 @@ def load_live_data(file: BinaryIO | bytes, *, filename: str | None = None) -> Lo
     )
 
     df[CanonicalColumns.SELLER_KEY] = df[CanonicalColumns.SELLER_ID].str.casefold()
-    df[CanonicalColumns.WEIGHT] = df[weight_source_col].map(to_numeric_weight)
+    df[CanonicalColumns.WEIGHT] = df[CanonicalColumns.SOURCE_TEXT].map(to_numeric_weight)
 
     unresolved = int(df[CanonicalColumns.WEIGHT].isna().sum())
     if unresolved:
@@ -184,7 +266,7 @@ def load_live_data(file: BinaryIO | bytes, *, filename: str | None = None) -> Lo
             f"(they still count for exact-DKPC and DKP-level matching)."
         )
 
-    df = df.drop(columns=[weight_source_col])
+    df = df.drop(columns=[CanonicalColumns.SOURCE_TEXT])
     logger.info("Loaded Live_Data: %d rows after cleaning.", len(df))
     return LoadResult(df=df, warnings=warnings)
 
@@ -198,23 +280,27 @@ def load_sold_data(file: BinaryIO | bytes, *, filename: str | None = None) -> Lo
     """
     warnings: list[str] = []
     names = get_field_names()
-    required = (
-        names["sold_seller_id"], names["sold_seller"], names["sold_dkp"], names["sold_dkpc"],
-        names["sold_weight_source"], names["sold_category"], names["sold_net_item_fcast"],
-    )
     raw_df = _read_tabular_any_engine(file, source_name="Sold_Data", filename=filename)
-    _require_columns(raw_df, required, source_name="Sold_Data")
+    resolver = _HeaderResolver(raw_df)
+    columns = _resolve_required(
+        resolver,
+        {key: names[key] for key in (
+            "sold_seller_id", "sold_seller", "sold_dkp", "sold_dkpc",
+            "sold_weight_source", "sold_category", "sold_net_item_fcast",
+        )},
+        source_name="Sold_Data",
+    )
 
     df = pd.DataFrame(
         {
-            CanonicalColumns.SELLER_ID: raw_df[names["sold_seller_id"]].map(normalize_id),
-            CanonicalColumns.SELLER: raw_df[names["sold_seller"]].map(normalize_text),
-            CanonicalColumns.DKP: raw_df[names["sold_dkp"]].map(normalize_id),
-            CanonicalColumns.DKPC: raw_df[names["sold_dkpc"]].map(normalize_id),
-            CanonicalColumns.SOURCE_TEXT: raw_df[names["sold_weight_source"]],
-            CanonicalColumns.CATEGORY: raw_df[names["sold_category"]].map(normalize_text),
+            CanonicalColumns.SELLER_ID: raw_df[columns["sold_seller_id"]].map(normalize_id),
+            CanonicalColumns.SELLER: raw_df[columns["sold_seller"]].map(normalize_text),
+            CanonicalColumns.DKP: raw_df[columns["sold_dkp"]].map(normalize_id),
+            CanonicalColumns.DKPC: raw_df[columns["sold_dkpc"]].map(normalize_id),
+            CanonicalColumns.SOURCE_TEXT: raw_df[columns["sold_weight_source"]],
+            CanonicalColumns.CATEGORY: raw_df[columns["sold_category"]].map(normalize_text),
             CanonicalColumns.NET_ITEM_FCAST: pd.to_numeric(
-                raw_df[names["sold_net_item_fcast"]], errors="coerce"
+                raw_df[columns["sold_net_item_fcast"]], errors="coerce"
             ),
         }
     )
@@ -232,7 +318,7 @@ def load_sold_data(file: BinaryIO | bytes, *, filename: str | None = None) -> Lo
     unresolved = int(df[CanonicalColumns.WEIGHT].isna().sum())
     if unresolved:
         warnings.append(
-            f"Sold_Data: {unresolved} row(s) have no extractable weight in '{names['sold_weight_source']}' "
+            f"Sold_Data: {unresolved} row(s) have no extractable weight in '{columns['sold_weight_source']}' "
             f"(exact-DKPC matching only will apply to these)."
         )
 

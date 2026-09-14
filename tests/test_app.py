@@ -435,3 +435,53 @@ def test_calculate_uses_renamed_live_weight_column():
     )
     assert response.status_code == 200
     assert response.json()["summary"][0]["seller_id"] == "S1"
+
+
+def test_warns_when_no_sold_dkp_resolves_a_product_name():
+    # Live_Data carries names, but for other products entirely — the name
+    # column would silently come out blank, so the run has to say why.
+    sold_rows = [
+        {
+            "marketplace_seller_id": "S1", "marketplace_seller_name": "ACME",
+            "product_id": "D_NOT_LIVE", "product_variant_id": "D_NOT_LIVE_C1",
+            "product_variant_name_fa": 1.0, "category_name_fa": "",
+            "sum_net_item_fcast": 5,
+        },
+    ]
+    response = client.post(
+        "/api/v1/calculate",
+        files={
+            "live_file": ("Live_Data.xlsx", _live_bytes()),
+            "sold_file": ("Sold_Data.xlsx", _xlsx_bytes(pd.DataFrame(sold_rows))),
+        },
+        data={"tolerance_pct": 10},
+    )
+    assert response.status_code == 200
+    assert any("DKP Name is blank" in w for w in response.json()["meta"]["warnings"])
+
+
+def test_calculate_resolves_product_names_from_a_differently_cased_header():
+    live_bytes = _xlsx_bytes(
+        pd.DataFrame(
+            {
+                "Seller_ID": ["S1"],
+                "Seller_Name": ["ACME"],
+                "DKP": ["D1"],
+                "DKP_NAME": ["Gold bracelet"],  # underscore + caps, not "DKP Name"
+                "DKPC": ["D1C1"],
+                "Weight": [1.0],
+            }
+        )
+    )
+    response = client.post(
+        "/api/v1/calculate",
+        files={
+            "live_file": ("Live_Data.xlsx", live_bytes),
+            "sold_file": ("Sold_Data.xlsx", _sold_bytes()),
+        },
+        data={"tolerance_pct": 10},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    row = next(r for r in body["missing_preview"] if r["dkpc"] == "D1C1")
+    assert row["dkp_name"] == "Gold bracelet"

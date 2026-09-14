@@ -37,6 +37,16 @@ class LiveDataColumns:
     # export. OPTIONAL on purpose — see REQUIRED below.
     DKP_NAME: Final[str] = "DKP Name"
 
+    # Other header spellings the same column is exported under. Tried
+    # (case/separator-insensitively, see excel_loader._header_key) only
+    # after the configured name misses. Safe to guess here precisely
+    # because this column never takes part in matching — the worst a wrong
+    # guess can do is show the wrong text in a report.
+    DKP_NAME_ALIASES: Final[tuple[str, ...]] = (
+        DKP_NAME, "DKP_Name", "DKP Title", "Product Name", "Product Title",
+        "نام کالا", "اسم کالا", "عنوان کالا",
+    )
+
     # DKP_NAME is deliberately absent here: it only enriches reports (it
     # never participates in matching), so an assortment export without it
     # still loads — the loader warns and leaves the name blank instead of

@@ -318,3 +318,102 @@ def test_xlsx_filename_is_not_treated_as_csv():
     )
     result = load_live_data(_to_xlsx_bytes(df), filename="Live_Data.xlsx")
     assert result.df["seller_id"].iloc[0] == "S1"
+
+
+# --------------------------------------------------------------------------- #
+# Header matching — a header that differs only cosmetically is the same column
+# --------------------------------------------------------------------------- #
+def _live_df(dkp_name_header: str = "DKP Name", **header_overrides: str) -> pd.DataFrame:
+    headers = {
+        "seller_id": "Seller_ID", "seller": "Seller_Name", "dkp": "DKP",
+        "dkpc": "DKPC", "weight": "Weight",
+    }
+    headers.update(header_overrides)
+    return pd.DataFrame(
+        {
+            headers["seller_id"]: ["S1"],
+            headers["seller"]: ["ACME"],
+            headers["dkp"]: ["D1"],
+            dkp_name_header: ["دستبند طلا"],
+            headers["dkpc"]: ["D1C1"],
+            headers["weight"]: [1.0],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "header",
+    ["DKP Name", "DKP_Name", "DKP NAME", "dkp name", "DKP Name ", "Dkp-Name"],
+)
+def test_product_name_column_matches_despite_case_separator_or_padding(header):
+    result = load_live_data(_to_xlsx_bytes(_live_df(header)))
+    assert list(result.df["dkp_name"]) == ["دستبند طلا"]
+    assert result.warnings == []
+
+
+@pytest.mark.parametrize("header", ["نام کالا", "Product Name", "Product Title"])
+def test_product_name_column_matches_known_alternative_spellings(header):
+    result = load_live_data(_to_xlsx_bytes(_live_df(header)))
+    assert list(result.df["dkp_name"]) == ["دستبند طلا"]
+
+
+def test_unknown_product_name_header_warns_with_the_files_actual_columns():
+    result = load_live_data(_to_xlsx_bytes(_live_df("Totally Unexpected")))
+    assert list(result.df["dkp_name"]) == [""]
+    warning = next(w for w in result.warnings if "product-name" in w)
+    # The warning has to name what IS in the file, so the column can be
+    # fixed in Settings without guessing.
+    assert "Totally Unexpected" in warning
+
+
+def test_empty_product_name_column_warns_rather_than_passing_silently():
+    df = _live_df()
+    df["DKP Name"] = ""
+    result = load_live_data(_to_xlsx_bytes(df))
+    assert any("present but empty" in w for w in result.warnings)
+
+
+def test_required_columns_also_match_despite_case_and_separator():
+    df = _live_df(seller_id="seller id", seller="SELLER_NAME", weight="weight")
+    result = load_live_data(_to_xlsx_bytes(df))
+    assert list(result.df["seller_id"]) == ["S1"]
+    assert list(result.df["seller"]) == ["ACME"]
+    assert result.df["weight"].tolist() == [1.0]
+
+
+def test_sold_data_required_columns_match_despite_case_and_separator():
+    df = pd.DataFrame(
+        {
+            "Marketplace_Seller_ID": ["S1"],
+            "marketplace seller name": ["ACME"],
+            "Product_ID": ["D1"],
+            "product variant id": ["D1C1"],
+            "product_variant_name_fa": ["0.65 گرم"],
+            "Category_Name_FA": ["زیورآلات"],
+            "Sum Net Item Fcast": [5],
+        }
+    )
+    result = load_sold_data(_to_xlsx_bytes(df))
+    assert result.df["seller_id"].iloc[0] == "S1"
+    assert result.df["category"].iloc[0] == "زیورآلات"
+    assert result.df["net_item_fcast"].iloc[0] == pytest.approx(5)
+
+
+def test_ambiguous_duplicate_headers_are_not_guessed_at():
+    # Two headers folding to the same key: picking either would be a coin
+    # flip, so the column counts as missing instead.
+    df = _live_df()
+    df.insert(0, "seller id", ["OTHER"])
+    with pytest.raises(ExcelValidationError):
+        load_live_data(_to_xlsx_bytes(df.rename(columns={"Seller_ID": "Seller ID"})))
+
+
+def test_weight_header_named_exactly_weight_does_not_clobber_the_parsed_weight():
+    # Regression: the raw weight text used to be parked under its own
+    # header, so a file whose weight column is literally "weight" collided
+    # with the canonical weight column — and dropping the raw one dropped
+    # the parsed weights with it.
+    df = _live_df(weight="weight")
+    df["weight"] = ["0.65 گرم"]
+    result = load_live_data(_to_xlsx_bytes(df))
+    assert result.df["weight"].tolist() == [0.65]

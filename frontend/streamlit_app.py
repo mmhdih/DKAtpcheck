@@ -585,7 +585,9 @@ if result:
                 )
 
     if meta["warnings"]:
-        with st.expander(f"⚠️ {len(meta['warnings'])} data warning(s)"):
+        # Open by default: these are the messages that explain an empty or
+        # short column, and a collapsed panel is one nobody reads.
+        with st.expander(f"⚠️ {len(meta['warnings'])} data warning(s)", expanded=True):
             for w in meta["warnings"]:
                 st.write(f"- {w}")
 
