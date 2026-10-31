@@ -6,7 +6,7 @@ PyInstaller spec file for ATP Analyzer. Run this ON WINDOWS (PyInstaller
 does not cross-compile):
 
     pip install -r requirements.txt
-    pip install pyinstaller
+    pip install -r requirements-build.txt
     pyinstaller --noconfirm build_windows.spec
 
 Output: dist/ATP_Analyzer/ATP_Analyzer.exe (onedir build — see README for
@@ -16,6 +16,8 @@ Using a .spec file (rather than long CLI flags) also sidesteps the
 Windows-vs-Linux/macOS "--add-data" path separator difference (';' vs ':'),
 since datas here are plain (source, dest) tuples.
 """
+import os
+
 from PyInstaller.utils.hooks import collect_all
 
 datas = [("backend", "backend"), ("frontend", "frontend")]
@@ -69,10 +71,16 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX compression is OFF on purpose: UPX-packed executables are one of
+    # the most common reasons antivirus (incl. Windows Defender) flags and
+    # quarantines PyInstaller apps as malware. The size saving isn't worth it.
+    upx=False,
     console=True,  # set to False once you've confirmed everything works,
                    # to hide the console window behind the app
     icon=None,     # point this at a .ico file to set a custom app icon
+    # Embed file/product metadata (Details tab in file Properties); bare
+    # executables with no version resource look more suspicious to AV.
+    version=os.path.join(SPECPATH, "version_info.txt"),
 )
 
 coll = COLLECT(
@@ -80,7 +88,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name="ATP_Analyzer",
 )

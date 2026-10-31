@@ -22,7 +22,7 @@ def _sold(rows: list[tuple[str, str, str, float | None]]) -> pd.DataFrame:
     df[C.DKP_NAME] = ""
     df[C.CATEGORY] = ""
     df[C.BUCKET] = CategoryBucket.JEWELRY
-    df[C.NET_ITEM_FCAST] = 0.0
+    df[C.VOLUME] = 0.0
     df[C.TAIL_BADGE] = None
     return df
 
@@ -182,14 +182,14 @@ def test_extra_columns_ride_through_to_result(index):
     sold = _sold([("ACME", "D1", "D1C1", 0.65)])
     sold[C.CATEGORY] = "شمش"
     sold[C.BUCKET] = CategoryBucket.BULLION
-    sold[C.NET_ITEM_FCAST] = 42.0
+    sold[C.VOLUME] = 42.0
     sold[C.TAIL_BADGE] = "ST"
     result = ATPEngine(index=index, tolerance_pct=0).compute(sold)
     dkpc_row = result.dkpc_results.iloc[0]
     assert dkpc_row[C.SELLER_ID] == "ACME"
     assert dkpc_row[C.CATEGORY] == "شمش"
     assert dkpc_row[C.BUCKET] == CategoryBucket.BULLION
-    assert dkpc_row[C.NET_ITEM_FCAST] == 42.0
+    assert dkpc_row[C.VOLUME] == 42.0
     assert dkpc_row[C.TAIL_BADGE] == "ST"
     dkp_row = result.dkp_results.iloc[0]
     assert dkp_row[C.BUCKET] == CategoryBucket.BULLION

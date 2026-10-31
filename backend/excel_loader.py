@@ -27,7 +27,7 @@ from typing import BinaryIO
 
 import pandas as pd
 
-from .config import CanonicalColumns, get_settings
+from .config import CanonicalColumns, VolumeMetric, get_settings
 from .field_names import get_field_names
 from .utils import get_logger, normalize_id, normalize_text
 from .weight_parser import to_numeric_weight
@@ -189,21 +189,46 @@ def load_live_data(file: BinaryIO | bytes, *, filename: str | None = None) -> Lo
     return LoadResult(df=df, warnings=warnings)
 
 
-def load_sold_data(file: BinaryIO | bytes, *, filename: str | None = None) -> LoadResult:
+def _volume_series(raw_df: pd.DataFrame, raw_column: str) -> pd.Series:
+    """A sales-volume column as floats; all-NaN when the file doesn't have it."""
+    if raw_column not in raw_df.columns:
+        return pd.Series(float("nan"), index=raw_df.index, dtype=float)
+    return pd.to_numeric(raw_df[raw_column], errors="coerce")
+
+
+def load_sold_data(
+    file: BinaryIO | bytes,
+    *,
+    filename: str | None = None,
+    volume_metric: str | None = VolumeMetric.DEFAULT,
+) -> LoadResult:
     """
     Load and canonicalize the Sold_Data file (.xlsx or .csv).
 
+    Args:
+        volume_metric: which sales-volume column the calculation ranks by
+            (VolumeMetric.NET_ITEM or VolumeMetric.NMV) — that column is
+            REQUIRED in the file; the other one is loaded if present and
+            left blank (NaN) otherwise. None requires neither (used where
+            no ranking happens, e.g. just listing the file's categories).
+
     Output columns: seller_id, seller, seller_key, dkp, dkpc, weight,
-                    category, net_item_fcast
+                    category, net_item_fcast, nmv_fcast
     """
     warnings: list[str] = []
     names = get_field_names()
-    required = (
+    required = [
         names["sold_seller_id"], names["sold_seller"], names["sold_dkp"], names["sold_dkpc"],
-        names["sold_weight_source"], names["sold_category"], names["sold_net_item_fcast"],
-    )
+        names["sold_weight_source"], names["sold_category"],
+    ]
+    if volume_metric is not None:
+        if volume_metric not in VolumeMetric.ALL:
+            raise ExcelValidationError(
+                f"Unknown volume metric '{volume_metric}'. Expected one of {list(VolumeMetric.ALL)}."
+            )
+        required.append(names[VolumeMetric.FIELD_KEY[volume_metric]])
     raw_df = _read_tabular_any_engine(file, source_name="Sold_Data", filename=filename)
-    _require_columns(raw_df, required, source_name="Sold_Data")
+    _require_columns(raw_df, tuple(required), source_name="Sold_Data")
 
     df = pd.DataFrame(
         {
@@ -213,9 +238,8 @@ def load_sold_data(file: BinaryIO | bytes, *, filename: str | None = None) -> Lo
             CanonicalColumns.DKPC: raw_df[names["sold_dkpc"]].map(normalize_id),
             CanonicalColumns.SOURCE_TEXT: raw_df[names["sold_weight_source"]],
             CanonicalColumns.CATEGORY: raw_df[names["sold_category"]].map(normalize_text),
-            CanonicalColumns.NET_ITEM_FCAST: pd.to_numeric(
-                raw_df[names["sold_net_item_fcast"]], errors="coerce"
-            ),
+            CanonicalColumns.NET_ITEM_FCAST: _volume_series(raw_df, names["sold_net_item_fcast"]),
+            CanonicalColumns.NMV_FCAST: _volume_series(raw_df, names["sold_nmv_fcast"]),
         }
     )
 

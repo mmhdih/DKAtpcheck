@@ -15,7 +15,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field, field_validator
 
-from .config import TailClassification
+from .config import TailClassification, VolumeMetric
 
 
 class WeightResolution(str, Enum):
@@ -52,6 +52,13 @@ class CalculationRequest(BaseModel):
     tail_badges: list[str] = Field(
         default_factory=lambda: list(TailClassification.ALL),
         description="Which ST/MT/LT Item-Tail badges to include. Defaults to all three (no filtering).",
+    )
+    volume_metric: str = Field(
+        VolumeMetric.DEFAULT,
+        description=(
+            "Sales volume the ST/MT/LT ranking (and per-seller export order) uses: "
+            "'net_item' (sum_net_item_fcast) or 'nmv' (sum_nmv_fcast)."
+        ),
     )
     generate_seller_zip: bool = Field(
         False, description="Also build the per-seller NOT-ATP ZIP export."
@@ -139,6 +146,7 @@ class CalculationMeta(BaseModel):
     tolerance_pct: float
     bullion_categories_selected: list[str] = Field(default_factory=list)
     tail_badges_selected: list[str] = Field(default_factory=lambda: list(TailClassification.ALL))
+    volume_metric: str = VolumeMetric.DEFAULT
     seller_zip_generated: bool = False
     seller_tail_zip_generated: bool = False
     execution_seconds: float

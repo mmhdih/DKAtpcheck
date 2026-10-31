@@ -12,7 +12,7 @@ call .venv\Scripts\activate.bat
 
 echo Installing dependencies...
 pip install -r requirements.txt
-pip install pyinstaller
+pip install -r requirements-build.txt
 
 echo Building ATP_Analyzer.exe (this can take a few minutes)...
 pyinstaller --noconfirm build_windows.spec

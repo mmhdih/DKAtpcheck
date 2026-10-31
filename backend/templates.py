@@ -37,6 +37,7 @@ def build_sold_data_template_bytes() -> bytes:
     columns = [
         names["sold_seller_id"], names["sold_seller"], names["sold_dkp"], names["sold_dkpc"],
         names["sold_weight_source"], names["sold_category"], names["sold_net_item_fcast"],
+        names["sold_nmv_fcast"],
     ]
     example_row = {
         names["sold_seller_id"]: "10001",
@@ -46,6 +47,7 @@ def build_sold_data_template_bytes() -> bytes:
         names["sold_weight_source"]: "0.65 گرم",
         names["sold_category"]: "زیورآلات",
         names["sold_net_item_fcast"]: 12,
+        names["sold_nmv_fcast"]: 450000000,
     }
     df = pd.DataFrame([example_row], columns=columns)
     return dataframe_to_excel_bytes(df, sheet_name="Sold_Data")

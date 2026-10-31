@@ -40,7 +40,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -r requirements-build.txt
+
+      # Build PyInstaller's bootloader FROM SOURCE instead of using the
+      # prebuilt one shipped in the PyPI wheel. That prebuilt bootloader is
+      # embedded in thousands of unrelated (including actual malware) exes,
+      # so antivirus engines - Windows Defender included - routinely flag
+      # and delete anything built with it. A freshly compiled bootloader
+      # (MSVC is preinstalled on windows-latest) has a unique signature and
+      # avoids those false positives.
+      - name: Install PyInstaller with a locally compiled bootloader
+        env:
+          PYINSTALLER_COMPILE_BOOTLOADER: "1"
+        run: |
+          pip install --verbose --no-cache-dir --no-binary=pyinstaller -r requirements-build.txt
 
       - name: Build ATP_Analyzer.exe
         run: pyinstaller --noconfirm build_windows.spec

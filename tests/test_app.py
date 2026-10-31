@@ -435,3 +435,79 @@ def test_calculate_uses_renamed_live_weight_column():
     )
     assert response.status_code == 200
     assert response.json()["summary"][0]["seller_id"] == "S1"
+
+
+def _metric_sold_rows() -> list[dict]:
+    # Same seller/bucket, two DKPs whose order flips between the metrics:
+    # by net items D1 dominates (90 vs 10), by NMV D2 does (10 vs 990).
+    common = {
+        "marketplace_seller_id": "S1", "marketplace_seller_name": "ACME",
+        "product_variant_name_fa": 1.0, "category_name_fa": "",
+    }
+    return [
+        {**common, "product_id": "D1", "product_variant_id": "D1C1",
+         "sum_net_item_fcast": 90, "sum_nmv_fcast": 10},
+        {**common, "product_id": "D2", "product_variant_id": "D2C1",
+         "sum_net_item_fcast": 10, "sum_nmv_fcast": 990},
+    ]
+
+
+def _calculate_with_sold(rows: list[dict], **form):
+    return client.post(
+        "/api/v1/calculate",
+        files={
+            "live_file": ("Live_Data.xlsx", _live_bytes()),
+            "sold_file": ("Sold_Data.xlsx", _xlsx_bytes(pd.DataFrame(rows))),
+        },
+        data={"tolerance_pct": 10, **form},
+    )
+
+
+def _badges_by_dkp(body: dict) -> dict[str, str]:
+    return {row["dkp"]: row["tail_badge"] for row in body["missing_preview"]}
+
+
+def test_calculate_defaults_to_net_item_ranking():
+    response = _calculate_with_sold(_metric_sold_rows())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["meta"]["volume_metric"] == "net_item"
+    assert _badges_by_dkp(body) == {"D1": "ST", "D2": "LT"}
+
+
+def test_calculate_ranks_by_nmv_when_selected():
+    response = _calculate_with_sold(_metric_sold_rows(), volume_metric="nmv")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["meta"]["volume_metric"] == "nmv"
+    assert _badges_by_dkp(body) == {"D1": "LT", "D2": "ST"}
+
+
+def test_calculate_nmv_without_nmv_column_returns_400():
+    rows = [{k: v for k, v in row.items() if k != "sum_nmv_fcast"} for row in _metric_sold_rows()]
+    response = _calculate_with_sold(rows, volume_metric="nmv")
+    assert response.status_code == 400
+    assert "sum_nmv_fcast" in response.json()["detail"]
+
+
+def test_calculate_rejects_unknown_volume_metric():
+    response = _calculate_with_sold(_metric_sold_rows(), volume_metric="gmv")
+    assert response.status_code == 400
+
+
+def test_categories_endpoint_needs_no_volume_column():
+    rows = [
+        {k: v for k, v in row.items() if k not in ("sum_net_item_fcast", "sum_nmv_fcast")}
+        for row in _metric_sold_rows()
+    ]
+    response = client.post(
+        "/api/v1/sold-data/categories",
+        files={"sold_file": ("Sold_Data.xlsx", _xlsx_bytes(pd.DataFrame(rows)))},
+    )
+    assert response.status_code == 200
+
+
+def test_config_advertises_volume_metrics():
+    body = client.get("/api/v1/config").json()
+    assert [m["key"] for m in body["volume_metrics"]] == ["net_item", "nmv"]
+    assert body["default_volume_metric"] == "net_item"

@@ -21,7 +21,7 @@ def _dkpc_row(**overrides) -> dict:
         C.CATEGORY: "زیورآلات",
         C.BUCKET: CategoryBucket.JEWELRY,
         C.TAIL_BADGE: "ST",
-        C.NET_ITEM_FCAST: 10.0,
+        C.VOLUME: 10.0,
         "match_type": "not_atp",
         "is_atp": False,
     }
@@ -80,9 +80,9 @@ def test_zip_excludes_unbadged_rows():
 
 def test_zip_sorts_zero_or_blank_net_item_fcast_rows_last():
     rows = [
-        _dkpc_row(**{C.DKPC: "BLANK", C.NET_ITEM_FCAST: float("nan")}),
-        _dkpc_row(**{C.DKPC: "ZERO", C.NET_ITEM_FCAST: 0.0}),
-        _dkpc_row(**{C.DKPC: "REAL", C.NET_ITEM_FCAST: 3.0}),
+        _dkpc_row(**{C.DKPC: "BLANK", C.VOLUME: float("nan")}),
+        _dkpc_row(**{C.DKPC: "ZERO", C.VOLUME: 0.0}),
+        _dkpc_row(**{C.DKPC: "REAL", C.VOLUME: 3.0}),
     ]
     zip_bytes = build_seller_missing_zip(_result(rows))
     sheets = _read_zip_sheets(zip_bytes)
@@ -91,9 +91,9 @@ def test_zip_sorts_zero_or_blank_net_item_fcast_rows_last():
 
 def test_zip_sorted_by_net_item_fcast_descending_and_excludes_that_column():
     rows = [
-        _dkpc_row(**{C.DKPC: "LOW", C.NET_ITEM_FCAST: 1.0}),
-        _dkpc_row(**{C.DKPC: "HIGH", C.NET_ITEM_FCAST: 99.0}),
-        _dkpc_row(**{C.DKPC: "MID", C.NET_ITEM_FCAST: 50.0}),
+        _dkpc_row(**{C.DKPC: "LOW", C.VOLUME: 1.0}),
+        _dkpc_row(**{C.DKPC: "HIGH", C.VOLUME: 99.0}),
+        _dkpc_row(**{C.DKPC: "MID", C.VOLUME: 50.0}),
     ]
     zip_bytes = build_seller_missing_zip(_result(rows))
     sheets = _read_zip_sheets(zip_bytes)

@@ -1,1 +1,4 @@
-pyinstaller>=6.5
+# Pinned on purpose: the CI build compiles PyInstaller's bootloader from
+# source (see .github/workflows/build-windows.yml), so a known version keeps
+# the build reproducible from one release to the next.
+pyinstaller==6.22.3
