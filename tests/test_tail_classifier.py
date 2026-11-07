@@ -11,8 +11,8 @@ from backend.tail_classifier import classify_tails, classify_tails_per_seller
 def _sold_totals(
     rows: list[tuple[str, str, float | None]], *, bucket: str = CategoryBucket.JEWELRY
 ) -> pd.DataFrame:
-    """rows: (seller_key, dkp, net_item_fcast) — one row per sold DKPC, all in the same bucket."""
-    df = pd.DataFrame(rows, columns=[C.SELLER_KEY, C.DKP, C.NET_ITEM_FCAST])
+    """rows: (seller_key, dkp, volume) — one row per sold DKPC, all in the same bucket."""
+    df = pd.DataFrame(rows, columns=[C.SELLER_KEY, C.DKP, C.VOLUME])
     df[C.BUCKET] = bucket
     return df
 
@@ -239,3 +239,21 @@ def test_per_seller_empty_input_returns_empty_frame():
     result = classify_tails_per_seller(sold)
     assert result.empty
     assert set(result.columns) == {C.SELLER_KEY, C.DKP, C.TAIL_BADGE}
+
+
+def test_assign_volume_copies_the_chosen_metric_column():
+    from backend.config import VolumeMetric
+    from backend.tail_classifier import assign_volume
+
+    sold = pd.DataFrame({C.NET_ITEM_FCAST: [5.0, 1.0], C.NMV_FCAST: [100.0, 900.0]})
+    assert assign_volume(sold, VolumeMetric.NET_ITEM)[C.VOLUME].tolist() == [5.0, 1.0]
+    assert assign_volume(sold, VolumeMetric.NMV)[C.VOLUME].tolist() == [100.0, 900.0]
+    # Input frame is left untouched.
+    assert C.VOLUME not in sold.columns
+
+
+def test_assign_volume_rejects_unknown_metric():
+    from backend.tail_classifier import assign_volume
+
+    with pytest.raises(ValueError):
+        assign_volume(pd.DataFrame({C.NET_ITEM_FCAST: [1.0], C.NMV_FCAST: [1.0]}), "gmv")

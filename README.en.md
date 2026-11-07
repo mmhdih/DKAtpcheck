@@ -130,7 +130,8 @@ purely for display and is never used to match rows across files.
 | `DKP Name` | — | `dkp_name` | **optional** product name, report-only; looked up per DKP (see below) |
 | `Weight` | `product_variant_name_fa` | `weight` | parsed via the same numeric/"`<n> گرم`" logic on both sides |
 | — | `category_name_fa` | `category` | Sold_Data only; drives the Bullion/Jewelry bucket |
-| — | `sum_net_item_fcast` | `net_item_fcast` | Sold_Data only; drives the ST/MT/LT tail badge |
+| — | `sum_net_item_fcast` | `net_item_fcast` | Sold_Data only; drives the ST/MT/LT tail badge when the **Net item** metric is selected (required only then) |
+| — | `sum_nmv_fcast` | `nmv_fcast` | Sold_Data only; drives the ST/MT/LT tail badge when the **NMV** metric is selected (required only then) |
 
 Both uploaded files' required columns are validated on upload; download
 example templates straight from the app (`⬇ Live_Data template` /
@@ -184,6 +185,15 @@ picker before running the calculation. Any category not explicitly marked
 Bullion (including blank/missing categories) is treated as Jewelry.
 
 ## 🎯 Item-Tail classification (ST/MT/LT) — marketplace-wide
+
+**Selectable ranking metric:** in step 3 of the UI you choose whether
+ranking uses **Net item** (`sum_net_item_fcast`, forecasted item count —
+the default) or **NMV** (`sum_nmv_fcast`, forecasted net merchandise
+value). The choice applies to every ST/MT/LT ranking (marketplace-wide and
+per-seller) and to the row order of the per-seller ZIP exports. Only the
+selected metric's column is required in Sold_Data. Wherever
+`sum_net_item_fcast` is mentioned below, read `sum_nmv_fcast` when NMV is
+selected.
 
 Every sold DKP is ranked **marketplace-wide** (across every seller
 combined, not per seller) by its total `sum_net_item_fcast` — but
@@ -524,9 +534,16 @@ automatically.
   Streamlit) and isn't specific to this project. On a restricted/managed
   machine where you can't install a different Python or edit the
   registry, use **Option A above** (GitHub builds it for you) instead.
-- **Antivirus flags the .exe / SmartScreen warning**: this is normal and
-  expected for unsigned PyInstaller executables; it's not a bug in the
-  app. Code-sign the binary if you're distributing it publicly.
+- **Antivirus flags the .exe / SmartScreen warning**: unsigned PyInstaller
+  executables are a common antivirus false positive. The build already
+  reduces this: the GitHub workflow compiles PyInstaller's bootloader from
+  source (instead of reusing the stock one shared with countless other
+  exes), UPX compression is disabled, and the exe carries Windows version
+  metadata (`version_info.txt`). If Defender still quarantines a build,
+  report it as a false positive at
+  https://www.microsoft.com/wdsi/filesubmission, and code-sign the binary
+  if you're distributing it widely. Local `build_windows.bat` builds use
+  the stock bootloader, so prefer the GitHub-built release.
 - **"Could not find module" at runtime**: add the missing package's name
   to `COLLECT_ALL_PACKAGES` in `build_windows.spec` and rebuild.
 - **Large output folder / slow first launch**: onedir (used here) is much

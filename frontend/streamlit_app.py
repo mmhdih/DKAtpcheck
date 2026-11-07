@@ -131,6 +131,11 @@ st.markdown(
 
 TAIL_BADGE_OPTIONS = ["ST", "MT", "LT"]
 
+# Sales-volume metric the ST/MT/LT ranking uses (backend config.VolumeMetric).
+# Fallback used only if an older backend doesn't advertise the options.
+DEFAULT_VOLUME_METRICS = [{"key": "net_item", "label": "Net item"}, {"key": "nmv", "label": "NMV"}]
+VOLUME_METRIC_SOURCE_COLUMN = {"net_item": "sum_net_item_fcast", "nmv": "sum_nmv_fcast"}
+
 DEFAULT_BULLION_CATEGORIES = [
     "شمش طلا",
     "پک شمش و پلاک طلا",
@@ -312,8 +317,27 @@ if sold_file is not None:
 else:
     st.caption("Upload Sold_Data above to choose which categories count as Bullion.")
 
+volume_metric_options = backend_cfg.get("volume_metrics", DEFAULT_VOLUME_METRICS)
+volume_metric_keys = [m["key"] for m in volume_metric_options]
+volume_metric_labels = {m["key"]: m["label"] for m in volume_metric_options}
+default_volume_metric = backend_cfg.get("default_volume_metric", volume_metric_keys[0])
+volume_metric = st.radio(
+    "مبنای رتبه‌بندی ST/MT/LT (Ranking metric)",
+    options=volume_metric_keys,
+    index=volume_metric_keys.index(default_volume_metric) if default_volume_metric in volume_metric_keys else 0,
+    format_func=lambda key: f"{volume_metric_labels.get(key, key)} ({VOLUME_METRIC_SOURCE_COLUMN.get(key, key)})",
+    horizontal=True,
+    help=(
+        "Which Sold_Data column every ST/MT/LT ranking (marketplace-wide and per-seller) is "
+        "computed from — forecasted item count (Net item) or forecasted value (NMV). It also "
+        "sets the order of rows in the per-seller ZIP exports. The chosen column must exist "
+        "in the Sold_Data file."
+    ),
+)
+volume_column = VOLUME_METRIC_SOURCE_COLUMN.get(volume_metric, volume_metric)
+
 tail_badges = st.multiselect(
-    "Item-Tail badges to include (ST/MT/LT, ranked by sum_net_item_fcast marketplace-wide, separately for Bullion and Jewelry)",
+    f"Item-Tail badges to include (ST/MT/LT, ranked by {volume_column} marketplace-wide, separately for Bullion and Jewelry)",
     options=TAIL_BADGE_OPTIONS, default=TAIL_BADGE_OPTIONS,
 )
 generate_seller_zip = st.checkbox("Also generate the per-seller missing-items ZIP export (for emailing to sellers)")
@@ -344,6 +368,7 @@ if run_clicked:
                     "tolerance_pct": tolerance_pct,
                     "bullion_categories": bullion_categories,
                     "tail_badges": tail_badges,
+                    "volume_metric": volume_metric,
                     "generate_seller_zip": generate_seller_zip,
                     "generate_seller_tail_zip": generate_seller_tail_zip,
                 },
@@ -369,6 +394,9 @@ if run_clicked:
 result = st.session_state.get("atp_result")
 if result:
     meta = result["meta"]
+    result_volume_column = VOLUME_METRIC_SOURCE_COLUMN.get(
+        meta.get("volume_metric", "net_item"), "sum_net_item_fcast"
+    )
 
     st.divider()
     st.subheader("Results")
@@ -378,6 +406,7 @@ if result:
     m2.metric("Unique sold DKPCs", meta["sold_dkpc_unique"])
     m3.metric("Unique sold DKPs", meta["sold_dkp_unique"])
     m4.metric("Calculated in", f"{meta['execution_seconds']}s")
+    st.caption(f"ST/MT/LT ranked by **{result_volume_column}**.")
 
     summary_df = pd.DataFrame(result["summary"]).rename(
         columns={
@@ -437,7 +466,7 @@ if result:
         unavailable = result.get("missing_unavailable_count", 0)
         if total == 0:
             st.info(
-                "No sold DKPC has a resolvable Item-Tail badge (sum_net_item_fcast is zero/blank "
+                f"No sold DKPC has a resolvable Item-Tail badge ({result_volume_column} is zero/blank "
                 "for all of them)."
             )
         else:
@@ -489,7 +518,7 @@ if result:
             "LT Available", "LT Unavailable",
         ]
         if tail_summary_df.empty:
-            st.info("No sold DKP has a resolvable Item-Tail badge (sum_net_item_fcast is zero/blank for all).")
+            st.info(f"No sold DKP has a resolvable Item-Tail badge ({result_volume_column} is zero/blank for all).")
         else:
             st.caption("📋 Overall table — DKP counts per seller, per Item-Tail badge, split by ATP status (weight-independent, DKP-level).")
             styled_tail_summary = tail_summary_df.style
@@ -535,7 +564,7 @@ if result:
             }
         )
         if seller_tail_summary_df.empty:
-            st.info("No sold DKP has a resolvable Item-Tail badge (sum_net_item_fcast is zero/blank for all).")
+            st.info(f"No sold DKP has a resolvable Item-Tail badge ({result_volume_column} is zero/blank for all).")
         else:
             st.caption("📋 Overall table — DKP counts per seller, per own-ranked Item-Tail badge, split by ATP status.")
             styled_seller_tail_summary = seller_tail_summary_df.style

@@ -318,3 +318,47 @@ def test_xlsx_filename_is_not_treated_as_csv():
     )
     result = load_live_data(_to_xlsx_bytes(df), filename="Live_Data.xlsx")
     assert result.df["seller_id"].iloc[0] == "S1"
+
+
+def _sold_df_with(**volume_columns) -> pd.DataFrame:
+    base = {
+        "marketplace_seller_id": ["S1"],
+        "marketplace_seller_name": ["ACME"],
+        "product_id": ["D1"],
+        "product_variant_id": ["D1C1"],
+        "product_variant_name_fa": [0.5],
+        "category_name_fa": ["شمش"],
+    }
+    base.update({name: [value] for name, value in volume_columns.items()})
+    return pd.DataFrame(base)
+
+
+def test_load_sold_data_reads_both_volume_columns_when_present():
+    df = _sold_df_with(sum_net_item_fcast=3, sum_nmv_fcast=1_500_000)
+    result = load_sold_data(_to_xlsx_bytes(df))
+    assert result.df["net_item_fcast"].iloc[0] == pytest.approx(3)
+    assert result.df["nmv_fcast"].iloc[0] == pytest.approx(1_500_000)
+
+
+def test_load_sold_data_net_item_metric_does_not_require_nmv_column():
+    result = load_sold_data(_to_xlsx_bytes(_sold_df_with(sum_net_item_fcast=3)), volume_metric="net_item")
+    assert pd.isna(result.df["nmv_fcast"].iloc[0])
+
+
+def test_load_sold_data_nmv_metric_requires_nmv_column_but_not_net_item():
+    with pytest.raises(ExcelValidationError, match="sum_nmv_fcast"):
+        load_sold_data(_to_xlsx_bytes(_sold_df_with(sum_net_item_fcast=3)), volume_metric="nmv")
+
+    result = load_sold_data(_to_xlsx_bytes(_sold_df_with(sum_nmv_fcast=900)), volume_metric="nmv")
+    assert result.df["nmv_fcast"].iloc[0] == pytest.approx(900)
+    assert pd.isna(result.df["net_item_fcast"].iloc[0])
+
+
+def test_load_sold_data_without_metric_requires_no_volume_column():
+    result = load_sold_data(_to_xlsx_bytes(_sold_df_with()), volume_metric=None)
+    assert len(result.df) == 1
+
+
+def test_load_sold_data_unknown_metric_raises():
+    with pytest.raises(ExcelValidationError):
+        load_sold_data(_to_xlsx_bytes(_sold_df_with(sum_net_item_fcast=3)), volume_metric="gmv")

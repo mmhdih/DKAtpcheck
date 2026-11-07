@@ -37,6 +37,7 @@ DEFAULT_FIELD_NAMES: Final[dict[str, str]] = {
     "sold_weight_source": SoldDataColumns.WEIGHT_SOURCE,
     "sold_category": SoldDataColumns.CATEGORY,
     "sold_net_item_fcast": SoldDataColumns.NET_ITEM_FCAST,
+    "sold_nmv_fcast": SoldDataColumns.NMV_FCAST,
 }
 
 # Human-readable labels shown in the Settings UI, in display order.
@@ -53,7 +54,8 @@ FIELD_LABELS: Final[dict[str, str]] = {
     "sold_dkpc": "Sold_Data — DKPC column",
     "sold_weight_source": "Sold_Data — Weight-source (variant name) column",
     "sold_category": "Sold_Data — Category column",
-    "sold_net_item_fcast": "Sold_Data — Net item forecast column",
+    "sold_net_item_fcast": "Sold_Data — Net item forecast column (needed when ranking by Net item)",
+    "sold_nmv_fcast": "Sold_Data — NMV forecast column (needed when ranking by NMV)",
 }
 
 _SETTINGS_DIR: Final[Path] = Path.home() / ".atp_analyzer"

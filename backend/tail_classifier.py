@@ -2,10 +2,14 @@
 tail_classifier.py
 -------------------
 Classifies each (seller_key, dkp) pair from Sold_Data into an ABC/Pareto
-"Item-Tail" badge — ST / MT / LT — by its share of total forecasted item
-volume (sum_net_item_fcast), computed SEPARATELY per category bucket
+"Item-Tail" badge — ST / MT / LT — by its share of total forecasted sales
+volume, computed SEPARATELY per category bucket
 (Bullion vs Jewelry), so a DKP's badge only ever competes against other
-DKPs in the same bucket. Two variants of this ranking are offered:
+DKPs in the same bucket. The volume is user-selectable per calculation
+(see config.VolumeMetric): forecasted net items (sum_net_item_fcast) or
+forecasted NMV (sum_nmv_fcast) — assign_volume() copies the chosen one
+into the `volume` column that both rankings read. Two variants of this
+ranking are offered:
 
   - classify_tails: ranked GLOBALLY across every seller combined (a
     single marketplace-wide Pareto ranking per bucket, not one per
@@ -17,8 +21,9 @@ DKPs in the same bucket. Two variants of this ranking are offered:
 
 Deliberately decoupled from atp_engine.py's matching logic: this is a
 reporting/classification concern over Sold_Data alone. It does depend on
-`bucket` (see atp_engine.assign_bucket), so assign_bucket() must run
-BEFORE either classify function in the calculation pipeline.
+`bucket` (see atp_engine.assign_bucket) and `volume` (see assign_volume),
+so both must run BEFORE either classify function in the calculation
+pipeline.
 """
 from __future__ import annotations
 
@@ -26,10 +31,21 @@ import numpy as np
 import pandas as pd
 
 from .config import CanonicalColumns as C
-from .config import TailClassification
+from .config import TailClassification, VolumeMetric
 from .utils import get_logger
 
 logger = get_logger(__name__)
+
+
+def assign_volume(sold_df: pd.DataFrame, volume_metric: str) -> pd.DataFrame:
+    """
+    Return a copy of sold_df with a `volume` column holding the chosen
+    metric's values (net items or NMV), which is what the Item-Tail
+    rankings and the per-seller export ordering read.
+    """
+    if volume_metric not in VolumeMetric.ALL:
+        raise ValueError(f"Unknown volume metric '{volume_metric}'. Expected one of {list(VolumeMetric.ALL)}.")
+    return sold_df.assign(**{C.VOLUME: sold_df[VolumeMetric.CANONICAL_COLUMN[volume_metric]]})
 
 
 def _classify_within_bucket(group: pd.DataFrame) -> pd.DataFrame:
@@ -71,14 +87,14 @@ def _classify_within_bucket(group: pd.DataFrame) -> pd.DataFrame:
 
 def _dkp_totals(sold_df: pd.DataFrame) -> pd.DataFrame:
     """
-    (seller_key, dkp) -> summed net_item_fcast + bucket, filtered down to
+    (seller_key, dkp) -> summed volume + bucket, filtered down to
     pairs whose total is a positive, non-NaN number (the shared precursor
     to both classify_tails and classify_tails_per_seller).
     """
     dkp_bucket = sold_df.groupby([C.SELLER_KEY, C.DKP])[C.BUCKET].first().reset_index()
 
     totals = (
-        sold_df.groupby([C.SELLER_KEY, C.DKP])[C.NET_ITEM_FCAST]
+        sold_df.groupby([C.SELLER_KEY, C.DKP])[C.VOLUME]
         .sum(min_count=1)
         .reset_index(name="_total_fcast")
     )
@@ -93,11 +109,11 @@ def classify_tails(sold_df: pd.DataFrame) -> pd.DataFrame:
             DataFrame, with a `bucket` column already assigned (call
             atp_engine.assign_bucket() first) — must not be
             pre-filtered/pre-deduped on rows, since ranking needs the true
-            total net_item_fcast per (seller_key, dkp).
+            total volume per (seller_key, dkp).
 
     Returns:
         DataFrame [seller_key, dkp, tail_badge] — one row per
-        (seller_key, dkp) pair whose SUMMED net_item_fcast (across every
+        (seller_key, dkp) pair whose SUMMED volume (across every
         matching sold_df row) is a positive, non-NaN number. Ranking and
         the 30%/70% cumulative cutoffs are computed independently within
         each bucket (a DKP's badge never depends on volume in the other
@@ -137,7 +153,7 @@ def classify_tails_per_seller(sold_df: pd.DataFrame) -> pd.DataFrame:
 
     Returns:
         DataFrame [seller_key, dkp, tail_badge] — one row per
-        (seller_key, dkp) pair whose SUMMED net_item_fcast is a positive,
+        (seller_key, dkp) pair whose SUMMED volume is a positive,
         non-NaN number. Pairs with a zero/entirely-NaN/blank total are
         OMITTED entirely, same exclusion rule as classify_tails.
     """

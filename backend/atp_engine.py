@@ -209,7 +209,7 @@ class ATPResult:
     """Everything downstream modules (summary/missing/seller_export) need."""
 
     # columns: seller_id, seller, seller_key, dkp, dkp_name, dkpc, weight,
-    #          category, bucket, tail_badge, net_item_fcast, match_type, is_atp
+    #          category, bucket, tail_badge, volume, match_type, is_atp
     dkpc_results: pd.DataFrame
     # columns: seller_id, seller, seller_key, dkp, dkp_name, category, bucket, tail_badge, is_atp
     dkp_results: pd.DataFrame
@@ -276,7 +276,7 @@ class ATPEngine:
 
         dkpc_cols = [
             C.SELLER_ID, C.SELLER, C.SELLER_KEY, C.DKP, C.DKP_NAME, C.DKPC, C.WEIGHT,
-            C.CATEGORY, C.BUCKET, C.TAIL_BADGE, C.NET_ITEM_FCAST, "match_type", "is_atp",
+            C.CATEGORY, C.BUCKET, C.TAIL_BADGE, C.VOLUME, "match_type", "is_atp",
         ]
         dkp_cols = [
             C.SELLER_ID, C.SELLER, C.SELLER_KEY, C.DKP, C.DKP_NAME,

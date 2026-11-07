@@ -7,8 +7,9 @@ of the on-screen Seller ATP DKPC table: the same badged rows carrying
 the same per-seller Item-Tail badge, narrowed to the Unavailable ones and
 enriched with Weight. Rows whose DKP has no badge at all (zero/blank
 forecast volume) are excluded, exactly as they are from that table; the
-raw net_item_fcast number only pre-sorts what remains, biggest demand
-first, and is never written to the output.
+raw sales volume (net item or NMV, whichever the ranking used) only
+pre-sorts what remains, biggest demand first, and is never written to
+the output.
 
 Reuses utils.dataframe_to_excel_bytes for the actual xlsx styling.
 """
@@ -58,7 +59,7 @@ def build_seller_missing_zip(result: ATPResult) -> bytes:
     with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         for seller_id, group in rows.groupby(C.SELLER_ID, sort=True):
             ordered = group.sort_values(
-                C.NET_ITEM_FCAST, ascending=False, kind="stable", na_position="last"
+                C.VOLUME, ascending=False, kind="stable", na_position="last"
             )
             seller_name = ordered[C.SELLER].iloc[0] if len(ordered) else ""
             sheet = pd.DataFrame(

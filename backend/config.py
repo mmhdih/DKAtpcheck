@@ -54,9 +54,14 @@ class SoldDataColumns:
     WEIGHT_SOURCE: Final[str] = "product_variant_name_fa"
     CATEGORY: Final[str] = "category_name_fa"
     NET_ITEM_FCAST: Final[str] = "sum_net_item_fcast"
+    # Forecasted net merchandise value. Only required when the user ranks
+    # Item-Tail by NMV (see VolumeMetric); otherwise loaded if present.
+    NMV_FCAST: Final[str] = "sum_nmv_fcast"
 
+    # The volume column is not listed here: which one is required (net item
+    # or NMV) depends on the VolumeMetric chosen for the calculation.
     REQUIRED: Final[tuple[str, ...]] = (
-        SELLER_ID, SELLER, DKP, DKPC, WEIGHT_SOURCE, CATEGORY, NET_ITEM_FCAST,
+        SELLER_ID, SELLER, DKP, DKPC, WEIGHT_SOURCE, CATEGORY,
     )
 
 
@@ -76,7 +81,12 @@ class CanonicalColumns:
     WEIGHT: Final[str] = "weight"          # float, NaN if unresolvable
     SOURCE_TEXT: Final[str] = "source_text"  # raw text weight was parsed from (debugging)
     CATEGORY: Final[str] = "category"        # Sold_Data only; "" if blank
-    NET_ITEM_FCAST: Final[str] = "net_item_fcast"  # Sold_Data only; float, NaN if blank
+    NET_ITEM_FCAST: Final[str] = "net_item_fcast"  # Sold_Data only; float, NaN if blank/absent
+    NMV_FCAST: Final[str] = "nmv_fcast"            # Sold_Data only; float, NaN if blank/absent
+    # The sales volume Item-Tail is ranked by for THIS request: a copy of
+    # either net_item_fcast or nmv_fcast, per the chosen VolumeMetric.
+    # Assigned at request time (see tail_classifier.assign_volume).
+    VOLUME: Final[str] = "volume"
     BUCKET: Final[str] = "bucket"            # "Bullion" | "Jewelry"; assigned at request time
     TAIL_BADGE: Final[str] = "tail_badge"    # "ST" | "MT" | "LT" | NaN; assigned at request time
 
@@ -90,7 +100,30 @@ class CategoryBucket:
 
 
 # --------------------------------------------------------------------------- #
-# Item-Tail (ABC/Pareto) classification, ranked globally by sum_net_item_fcast
+# Sales-volume metric the Item-Tail ranking (and per-seller export order) uses
+# --------------------------------------------------------------------------- #
+class VolumeMetric:
+    NET_ITEM: Final[str] = "net_item"   # sum_net_item_fcast — forecasted item count
+    NMV: Final[str] = "nmv"             # sum_nmv_fcast — forecasted net merchandise value
+    ALL: Final[tuple[str, ...]] = (NET_ITEM, NMV)
+    DEFAULT: Final[str] = NET_ITEM
+
+    LABELS: Final[dict[str, str]] = {NET_ITEM: "Net item", NMV: "NMV"}
+
+    # Canonical Sold_Data column holding each metric's values.
+    CANONICAL_COLUMN: Final[dict[str, str]] = {
+        NET_ITEM: CanonicalColumns.NET_ITEM_FCAST,
+        NMV: CanonicalColumns.NMV_FCAST,
+    }
+    # field_names.py key of each metric's raw (user-editable) column name.
+    FIELD_KEY: Final[dict[str, str]] = {
+        NET_ITEM: "sold_net_item_fcast",
+        NMV: "sold_nmv_fcast",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Item-Tail (ABC/Pareto) classification, ranked by the chosen VolumeMetric
 # --------------------------------------------------------------------------- #
 class TailClassification:
     ST: Final[str] = "ST"

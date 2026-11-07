@@ -37,7 +37,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from .atp_engine import ATPEngine, ATPIndex, ATPResult, assign_bucket, attach_dkp_names
-from .config import CanonicalColumns, TailClassification, get_settings
+from .config import CanonicalColumns, TailClassification, VolumeMetric, get_settings
 from .excel_loader import ExcelValidationError, load_live_data, load_sold_data
 from .field_names import DEFAULT_FIELD_NAMES, FIELD_LABELS, get_field_names, reset_field_names, save_field_names
 from .missing_generator import build_missing, missing_to_excel_bytes
@@ -56,7 +56,7 @@ from .models import (
 from .report_labels import STATUS_COLUMN, STATUS_UNAVAILABLE
 from .seller_export import build_seller_missing_zip
 from .summary_generator import build_summary, summary_to_excel_bytes
-from .tail_classifier import classify_tails, classify_tails_per_seller
+from .tail_classifier import assign_volume, classify_tails, classify_tails_per_seller
 from .tail_summary_generator import (
     build_tail_dkp_list,
     build_tail_dkp_zip,
@@ -114,6 +114,10 @@ def public_config() -> dict:
         "default_tolerance_pct": settings.default_tolerance_pct,
         "max_upload_size_mb": settings.max_upload_size_mb,
         "tail_badges": list(TailClassification.ALL),
+        "volume_metrics": [
+            {"key": key, "label": VolumeMetric.LABELS[key]} for key in VolumeMetric.ALL
+        ],
+        "default_volume_metric": VolumeMetric.DEFAULT,
     }
 
 
@@ -173,7 +177,10 @@ async def sold_data_categories(
 ) -> CategoryListResponse:
     sold_bytes = await _read_upload_within_limit(sold_file, label="Sold_Data file")
     try:
-        sold_result = load_sold_data(io.BytesIO(sold_bytes), filename=sold_file.filename)
+        # Listing categories doesn't rank anything, so neither volume column is required.
+        sold_result = load_sold_data(
+            io.BytesIO(sold_bytes), filename=sold_file.filename, volume_metric=None
+        )
     except ExcelValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     categories = sorted({c for c in sold_result.df[CanonicalColumns.CATEGORY] if c})
@@ -196,6 +203,10 @@ async def calculate(
         default_factory=lambda: list(TailClassification.ALL),
         description="Which ST/MT/LT Item-Tail badges to include",
     ),
+    volume_metric: str = Form(
+        VolumeMetric.DEFAULT,
+        description="Sales volume the ST/MT/LT ranking uses: 'net_item' (sum_net_item_fcast) or 'nmv' (sum_nmv_fcast)",
+    ),
     generate_seller_zip: bool = Form(False, description="Also build the per-seller NOT-ATP ZIP export"),
     generate_seller_tail_zip: bool = Form(
         False,
@@ -215,17 +226,27 @@ async def calculate(
     if unknown_badges:
         raise HTTPException(status_code=400, detail=f"Unknown tail_badges: {sorted(unknown_badges)}")
 
+    if volume_metric not in VolumeMetric.ALL:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown volume_metric '{volume_metric}'. Expected one of {list(VolumeMetric.ALL)}.",
+        )
+
     live_bytes = await _read_upload_within_limit(live_file, label="Live_Data file")
     sold_bytes = await _read_upload_within_limit(sold_file, label="Sold_Data file")
 
     with timer() as t:
         try:
             live_result = load_live_data(io.BytesIO(live_bytes), filename=live_file.filename)
-            sold_result = load_sold_data(io.BytesIO(sold_bytes), filename=sold_file.filename)
+            sold_result = load_sold_data(
+                io.BytesIO(sold_bytes), filename=sold_file.filename, volume_metric=volume_metric
+            )
         except ExcelValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        sold_df = sold_result.df
+        # Every ranking below (marketplace-wide and per-seller ST/MT/LT) and
+        # the per-seller export ordering read this one `volume` column.
+        sold_df = assign_volume(sold_result.df, volume_metric)
 
         # Bucket must be assigned before tail classification: ST/MT/LT is
         # ranked separately within each bucket, so a DKP's badge never
@@ -304,6 +325,7 @@ async def calculate(
         tolerance_pct=tolerance_pct,
         bullion_categories_selected=bullion_categories,
         tail_badges_selected=sorted(selected_badges),
+        volume_metric=volume_metric,
         seller_zip_generated=seller_zip_bytes is not None,
         seller_tail_zip_generated=seller_tail_zip_bytes is not None,
         execution_seconds=round(t["seconds"], 3),
