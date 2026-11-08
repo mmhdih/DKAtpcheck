@@ -423,8 +423,12 @@ same `put()`/`get()` interface — nothing else needs to change.
 - The frontend's Bullion-labels picker defaults to pre-selecting
   `شمش طلا`, `پک شمش و پلاک طلا`, `سکه و شمش نقره`, and
   `سکه پارسیان (گرمی)` whenever they appear in the uploaded Sold_Data's
-  categories (`frontend/streamlit_app.py::DEFAULT_BULLION_CATEGORIES`) —
-  still fully editable per calculation, this is just the starting point.
+  categories — still fully editable per calculation, this is just the
+  starting point. That default list is itself editable from **Settings →
+  Default Bullion labels** (one label per line), or by saving the current
+  selection with the "📌 save as default" button under the picker. It's
+  stored in `~/.atp_analyzer/bullion_categories.json`; the built-in list
+  lives in `backend/config.py::CategoryBucket.DEFAULT_BULLION_CATEGORIES`.
 - CSV uploads try `utf-8-sig` → `cp1256` → `utf-8` encodings in order and
   auto-detect the delimiter (Iranian Excel exports mix `,` and `;`
   depending on regional settings) — see `ATP_CSV_ENCODING_PREFERENCE`.

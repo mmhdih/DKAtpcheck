@@ -98,6 +98,17 @@ class CategoryBucket:
     BULLION: Final[str] = "Bullion"
     JEWELRY: Final[str] = "Jewelry"
 
+    # category_name_fa values pre-selected as Bullion in the UI (only the
+    # ones actually present in the uploaded Sold_Data). Built-in default;
+    # the user can replace the list from the Settings panel (see
+    # bullion_defaults.py).
+    DEFAULT_BULLION_CATEGORIES: Final[tuple[str, ...]] = (
+        "شمش طلا",
+        "پک شمش و پلاک طلا",
+        "سکه و شمش نقره",
+        "سکه پارسیان (گرمی)",
+    )
+
 
 # --------------------------------------------------------------------------- #
 # Sales-volume metric the Item-Tail ranking (and per-seller export order) uses

@@ -511,3 +511,38 @@ def test_config_advertises_volume_metrics():
     body = client.get("/api/v1/config").json()
     assert [m["key"] for m in body["volume_metrics"]] == ["net_item", "nmv"]
     assert body["default_volume_metric"] == "net_item"
+
+
+def test_bullion_defaults_get_save_reset_roundtrip():
+    body = client.get("/api/v1/bullion-defaults").json()
+    assert body["categories"] == body["builtin_default"]
+    assert "شمش طلا" in body["categories"]
+
+    body = client.post("/api/v1/bullion-defaults", json={"categories": ["سکه بهار آزادی"]}).json()
+    assert body["categories"] == ["سکه بهار آزادی"]
+    assert client.get("/api/v1/bullion-defaults").json()["categories"] == ["سکه بهار آزادی"]
+
+    body = client.post("/api/v1/bullion-defaults/reset").json()
+    assert body["categories"] == body["builtin_default"]
+
+
+def test_categories_endpoint_reports_available_volume_metrics():
+    rows = [{k: v for k, v in row.items() if k != "sum_nmv_fcast"} for row in _metric_sold_rows()]
+    response = client.post(
+        "/api/v1/sold-data/categories",
+        files={"sold_file": ("Sold_Data.xlsx", _xlsx_bytes(pd.DataFrame(rows)))},
+    )
+    assert response.json()["available_volume_metrics"] == ["net_item"]
+
+    response = client.post(
+        "/api/v1/sold-data/categories",
+        files={"sold_file": ("Sold_Data.xlsx", _xlsx_bytes(pd.DataFrame(_metric_sold_rows())))},
+    )
+    assert response.json()["available_volume_metrics"] == ["net_item", "nmv"]
+
+
+def test_missing_nmv_error_suggests_switching_to_net_item():
+    rows = [{k: v for k, v in row.items() if k != "sum_nmv_fcast"} for row in _metric_sold_rows()]
+    detail = _calculate_with_sold(rows, volume_metric="nmv").json()["detail"]
+    assert "switch the ranking metric to Net item" in detail
+    assert "تنظیمات" in detail
