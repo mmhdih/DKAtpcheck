@@ -4,8 +4,8 @@
 # Bump filevers/prodvers and the version strings for each release.
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(7, 0, 0, 0),
-    prodvers=(7, 0, 0, 0),
+    filevers=(7, 1, 0, 0),
+    prodvers=(7, 1, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -19,12 +19,12 @@ VSVersionInfo(
         '040904B0',
         [StringStruct('CompanyName', 'ATP Analyzer'),
          StringStruct('FileDescription', 'ATP Analyzer - seller ATP report tool'),
-         StringStruct('FileVersion', '7.0.0.0'),
+         StringStruct('FileVersion', '7.1.0.0'),
          StringStruct('InternalName', 'ATP_Analyzer'),
          StringStruct('LegalCopyright', 'Internal tool'),
          StringStruct('OriginalFilename', 'ATP_Analyzer.exe'),
          StringStruct('ProductName', 'ATP Analyzer'),
-         StringStruct('ProductVersion', '7.0.0.0')])
+         StringStruct('ProductVersion', '7.1.0.0')])
     ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
   ]
