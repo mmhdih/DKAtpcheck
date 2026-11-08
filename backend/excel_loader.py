@@ -136,7 +136,7 @@ def load_live_data(file: BinaryIO | bytes, *, filename: str | None = None) -> Lo
     """
     Load and canonicalize the Live_Data file (.xlsx or .csv).
 
-    Output columns: seller_id, seller, seller_key, dkp, dkp_name, dkpc, weight
+    Output columns: seller_id, seller, seller_key, dkp, dkpc, weight
     """
     warnings: list[str] = []
     names = get_field_names()
@@ -157,18 +157,6 @@ def load_live_data(file: BinaryIO | bytes, *, filename: str | None = None) -> Lo
             weight_source_col: raw_df[weight_source_col],
         }
     )
-
-    # Product name is report-only enrichment, never a matching input, so a
-    # file without that column loads fine — names just come out blank.
-    dkp_name_col = names["live_dkp_name"]
-    if dkp_name_col in raw_df.columns:
-        df[CanonicalColumns.DKP_NAME] = raw_df[dkp_name_col].map(normalize_text)
-    else:
-        df[CanonicalColumns.DKP_NAME] = ""
-        warnings.append(
-            f"Live_Data: no '{dkp_name_col}' column found — product names will be blank in the "
-            f"outputs. Rename the column in the file, or fix its name in Settings."
-        )
 
     df = _drop_missing_identifiers(
         df,
@@ -235,7 +223,7 @@ def load_sold_data(
             left blank (NaN) otherwise. None requires neither (used where
             no ranking happens, e.g. just listing the file's categories).
 
-    Output columns: seller_id, seller, seller_key, dkp, dkpc, weight,
+    Output columns: seller_id, seller, seller_key, dkp, dkp_name, dkpc, weight,
                     category, net_item_fcast, nmv_fcast
     """
     warnings: list[str] = []
@@ -270,6 +258,18 @@ def load_sold_data(
             CanonicalColumns.NMV_FCAST: _volume_series(raw_df, names["sold_nmv_fcast"]),
         }
     )
+
+    # Product name is report-only enrichment, never a matching input, so a
+    # file without that column loads fine — names just come out blank.
+    dkp_name_col = names["sold_dkp_name"]
+    if dkp_name_col in raw_df.columns:
+        df[CanonicalColumns.DKP_NAME] = raw_df[dkp_name_col].map(normalize_text)
+    else:
+        df[CanonicalColumns.DKP_NAME] = ""
+        warnings.append(
+            f"Sold_Data: no '{dkp_name_col}' column found — product names will be blank in the "
+            f"outputs. Rename the column in the file, or fix its name in Settings."
+        )
 
     df = _drop_missing_identifiers(
         df,

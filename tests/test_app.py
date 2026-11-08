@@ -39,7 +39,6 @@ def _live_bytes() -> bytes:
                 "Seller_ID": ["S1", "S1"],
                 "Seller_Name": ["ACME", "ACME"],
                 "DKP": ["D1", "D2"],
-                "DKP Name": ["Gold bracelet", "Silver ring"],
                 "DKPC": ["D1C1", "D2C1"],
                 "Weight": [1.0, 2.0],
             }
@@ -55,7 +54,7 @@ def _sold_bytes(rows: list[dict] | None = None) -> bytes:
                 "marketplace_seller_name": "ACME",
                 "product_id": "D1",
                 "product_variant_id": "D1C1",
-                "product_variant_name_fa": 1.0,
+                "product_variant_name_fa": "Gold bracelet | 1 گرم |",
                 "category_name_fa": "زیورآلات",
                 "sum_net_item_fcast": 5,
             },
@@ -300,9 +299,9 @@ def test_missing_preview_lists_both_statuses_with_badge_and_product_name():
     # D1C1 is live in Live_Data; D9C1 is not.
     assert rows["D1C1"]["status"] == "Available"
     assert rows["D9C1"]["status"] == "Unavailable"
-    assert rows["D1C1"]["dkp_name"] == "Gold bracelet"
-    # D9 is nowhere in Live_Data, so its name can't be resolved.
-    assert rows["D9C1"]["dkp_name"] == ""
+    # Names come from Sold_Data's name column (product_variant_name_fa by default).
+    assert rows["D1C1"]["dkp_name"] == "Gold bracelet | 1 گرم |"
+    assert rows["D9C1"]["dkp_name"] == "9"
     assert rows["D1C1"]["tail_badge"] in {"ST", "MT", "LT"}
     assert body["missing_total_count"] == 2
     assert body["missing_unavailable_count"] == 1

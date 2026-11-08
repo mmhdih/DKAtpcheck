@@ -291,9 +291,9 @@ async def calculate(
         # depends on volume in the other bucket.
         sold_df = assign_bucket(sold_df, bullion_categories=set(bullion_categories))
 
-        # Product names ride along from here so every DKP-bearing report
-        # can show them without re-reading Live_Data.
-        sold_df = attach_dkp_names(sold_df, live_result.df)
+        # Product names (from Sold_Data's name column) ride along from here
+        # so every DKP-bearing report can show them.
+        sold_df = attach_dkp_names(sold_df)
 
         # Per-seller ranking is computed on the FULL bucketed universe (a
         # seller's own Pareto curve must reflect their true sales mix, not
