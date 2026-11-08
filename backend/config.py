@@ -33,14 +33,6 @@ class LiveDataColumns:
     # field_names.py (Settings panel), this is only the built-in default.
     SIZE_NAME: Final[str] = "Weight"
 
-    # Product (DKP-level) display name, as it appears in the assortment
-    # export. OPTIONAL on purpose — see REQUIRED below.
-    DKP_NAME: Final[str] = "DKP Name"
-
-    # DKP_NAME is deliberately absent here: it only enriches reports (it
-    # never participates in matching), so an assortment export without it
-    # still loads — the loader warns and leaves the name blank instead of
-    # rejecting the file.
     REQUIRED: Final[tuple[str, ...]] = (SELLER_ID, SELLER, DKP, DKPC, SIZE_NAME)
 
 
@@ -53,6 +45,12 @@ class SoldDataColumns:
     DKPC: Final[str] = "product_variant_id"
     WEIGHT_SOURCE: Final[str] = "product_variant_name_fa"
     CATEGORY: Final[str] = "category_name_fa"
+    # Product display name shown as "DKP Name" in the reports. By default
+    # the variant name, the same column weight is parsed from; editable in
+    # Settings. OPTIONAL on purpose: it only enriches reports (it never
+    # participates in matching), so a file without it still loads — the
+    # loader warns and leaves names blank instead of rejecting the file.
+    DKP_NAME: Final[str] = "product_variant_name_fa"
     NET_ITEM_FCAST: Final[str] = "sum_net_item_fcast"
     # Forecasted net merchandise value. Only required when the user ranks
     # Item-Tail by NMV (see VolumeMetric); otherwise loaded if present.
@@ -76,7 +74,7 @@ class CanonicalColumns:
     SELLER: Final[str] = "seller"            # display name (trimmed, original casing)
     SELLER_KEY: Final[str] = "seller_key"    # casefolded seller_id; join key used throughout the engine
     DKP: Final[str] = "dkp"
-    DKP_NAME: Final[str] = "dkp_name"        # product display name from Live_Data; "" if unknown
+    DKP_NAME: Final[str] = "dkp_name"        # product display name from Sold_Data; "" if unknown
     DKPC: Final[str] = "dkpc"
     WEIGHT: Final[str] = "weight"          # float, NaN if unresolvable
     SOURCE_TEXT: Final[str] = "source_text"  # raw text weight was parsed from (debugging)
@@ -97,6 +95,17 @@ class CanonicalColumns:
 class CategoryBucket:
     BULLION: Final[str] = "Bullion"
     JEWELRY: Final[str] = "Jewelry"
+
+    # category_name_fa values pre-selected as Bullion in the UI (only the
+    # ones actually present in the uploaded Sold_Data). Built-in default;
+    # the user can replace the list from the Settings panel (see
+    # bullion_defaults.py).
+    DEFAULT_BULLION_CATEGORIES: Final[tuple[str, ...]] = (
+        "شمش طلا",
+        "پک شمش و پلاک طلا",
+        "سکه و شمش نقره",
+        "سکه پارسیان (گرمی)",
+    )
 
 
 # --------------------------------------------------------------------------- #

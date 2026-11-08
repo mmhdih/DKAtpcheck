@@ -39,7 +39,6 @@ def _live_bytes() -> bytes:
                 "Seller_ID": ["S1", "S1"],
                 "Seller_Name": ["ACME", "ACME"],
                 "DKP": ["D1", "D2"],
-                "DKP Name": ["Gold bracelet", "Silver ring"],
                 "DKPC": ["D1C1", "D2C1"],
                 "Weight": [1.0, 2.0],
             }
@@ -55,7 +54,7 @@ def _sold_bytes(rows: list[dict] | None = None) -> bytes:
                 "marketplace_seller_name": "ACME",
                 "product_id": "D1",
                 "product_variant_id": "D1C1",
-                "product_variant_name_fa": 1.0,
+                "product_variant_name_fa": "Gold bracelet | 1 گرم |",
                 "category_name_fa": "زیورآلات",
                 "sum_net_item_fcast": 5,
             },
@@ -300,9 +299,9 @@ def test_missing_preview_lists_both_statuses_with_badge_and_product_name():
     # D1C1 is live in Live_Data; D9C1 is not.
     assert rows["D1C1"]["status"] == "Available"
     assert rows["D9C1"]["status"] == "Unavailable"
-    assert rows["D1C1"]["dkp_name"] == "Gold bracelet"
-    # D9 is nowhere in Live_Data, so its name can't be resolved.
-    assert rows["D9C1"]["dkp_name"] == ""
+    # Names come from Sold_Data's name column (product_variant_name_fa by default).
+    assert rows["D1C1"]["dkp_name"] == "Gold bracelet | 1 گرم |"
+    assert rows["D9C1"]["dkp_name"] == "9"
     assert rows["D1C1"]["tail_badge"] in {"ST", "MT", "LT"}
     assert body["missing_total_count"] == 2
     assert body["missing_unavailable_count"] == 1
@@ -511,3 +510,38 @@ def test_config_advertises_volume_metrics():
     body = client.get("/api/v1/config").json()
     assert [m["key"] for m in body["volume_metrics"]] == ["net_item", "nmv"]
     assert body["default_volume_metric"] == "net_item"
+
+
+def test_bullion_defaults_get_save_reset_roundtrip():
+    body = client.get("/api/v1/bullion-defaults").json()
+    assert body["categories"] == body["builtin_default"]
+    assert "شمش طلا" in body["categories"]
+
+    body = client.post("/api/v1/bullion-defaults", json={"categories": ["سکه بهار آزادی"]}).json()
+    assert body["categories"] == ["سکه بهار آزادی"]
+    assert client.get("/api/v1/bullion-defaults").json()["categories"] == ["سکه بهار آزادی"]
+
+    body = client.post("/api/v1/bullion-defaults/reset").json()
+    assert body["categories"] == body["builtin_default"]
+
+
+def test_categories_endpoint_reports_available_volume_metrics():
+    rows = [{k: v for k, v in row.items() if k != "sum_nmv_fcast"} for row in _metric_sold_rows()]
+    response = client.post(
+        "/api/v1/sold-data/categories",
+        files={"sold_file": ("Sold_Data.xlsx", _xlsx_bytes(pd.DataFrame(rows)))},
+    )
+    assert response.json()["available_volume_metrics"] == ["net_item"]
+
+    response = client.post(
+        "/api/v1/sold-data/categories",
+        files={"sold_file": ("Sold_Data.xlsx", _xlsx_bytes(pd.DataFrame(_metric_sold_rows())))},
+    )
+    assert response.json()["available_volume_metrics"] == ["net_item", "nmv"]
+
+
+def test_missing_nmv_error_suggests_switching_to_net_item():
+    rows = [{k: v for k, v in row.items() if k != "sum_nmv_fcast"} for row in _metric_sold_rows()]
+    detail = _calculate_with_sold(rows, volume_metric="nmv").json()["detail"]
+    assert "switch the ranking metric to Net item" in detail
+    assert "تنظیمات" in detail

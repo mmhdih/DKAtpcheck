@@ -173,29 +173,33 @@ def assign_bucket(sold_df: pd.DataFrame, bullion_categories: set[str]) -> pd.Dat
     return sold_df.assign(**{C.BUCKET: bucket})
 
 
-def attach_dkp_names(sold_df: pd.DataFrame, live_df: pd.DataFrame) -> pd.DataFrame:
+def attach_dkp_names(sold_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Returns sold_df with a `dkp_name` column looked up from Live_Data by
-    DKP, so every DKP-bearing report can show the product name.
+    Returns sold_df with its `dkp_name` column (read from Sold_Data's
+    product-name column, see excel_loader.load_sold_data) filled in where
+    a row's own name is blank, so every DKP-bearing report can show the
+    product name.
 
-    The lookup is deliberately marketplace-wide (keyed on DKP alone, not
-    on seller): a DKP is a marketplace product id, so a sold DKP that this
-    seller no longer has live — exactly the rows the Missing report is
-    about — still resolves its name from any other seller's live row. A
-    DKP nobody has live, or a Live_Data without the name column at all,
-    yields "" rather than dropping the row.
+    A row keeps its OWN name when it has one: with the default name column
+    (the variant name) that keeps each DKPC row's name consistent with its
+    own weight. Only blank names are back-filled, with the first non-blank
+    name of the same DKP from anywhere in the file — deliberately
+    marketplace-wide (keyed on DKP alone, not on seller), since a DKP is a
+    marketplace product id. A DKP with no name anywhere stays "" rather
+    than dropping the row.
 
     Like assign_bucket, this runs BEFORE ATPEngine.compute() so the name
     rides through the per-DKPC/per-DKP dedup for free.
     """
+    own = sold_df[C.DKP_NAME].fillna("").astype(str)
     names = (
-        live_df.loc[live_df[C.DKP_NAME].astype(str) != "", [C.DKP, C.DKP_NAME]]
+        sold_df.loc[own != "", [C.DKP, C.DKP_NAME]]
         .drop_duplicates(subset=[C.DKP])
         .set_index(C.DKP)[C.DKP_NAME]
     )
-    resolved = sold_df[C.DKP].map(names).fillna("")
+    resolved = own.where(own != "", sold_df[C.DKP].map(names)).fillna("")
     logger.info(
-        "Resolved product names for %d of %d sold row(s) from %d named live DKP(s).",
+        "Resolved product names for %d of %d sold row(s) (%d named DKP(s)).",
         int((resolved != "").sum()), len(sold_df), len(names),
     )
     return sold_df.assign(**{C.DKP_NAME: resolved})

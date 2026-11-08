@@ -45,6 +45,9 @@ class LoadResult:
 
     df: pd.DataFrame
     warnings: list[str] = field(default_factory=list)
+    # Sold_Data only: which VolumeMetric columns the file actually has, so
+    # the UI can warn before a calculation that would fail on a missing one.
+    available_volume_metrics: list[str] = field(default_factory=list)
 
 
 def _is_csv_filename(filename: str | None) -> bool:
@@ -133,7 +136,7 @@ def load_live_data(file: BinaryIO | bytes, *, filename: str | None = None) -> Lo
     """
     Load and canonicalize the Live_Data file (.xlsx or .csv).
 
-    Output columns: seller_id, seller, seller_key, dkp, dkp_name, dkpc, weight
+    Output columns: seller_id, seller, seller_key, dkp, dkpc, weight
     """
     warnings: list[str] = []
     names = get_field_names()
@@ -154,18 +157,6 @@ def load_live_data(file: BinaryIO | bytes, *, filename: str | None = None) -> Lo
             weight_source_col: raw_df[weight_source_col],
         }
     )
-
-    # Product name is report-only enrichment, never a matching input, so a
-    # file without that column loads fine — names just come out blank.
-    dkp_name_col = names["live_dkp_name"]
-    if dkp_name_col in raw_df.columns:
-        df[CanonicalColumns.DKP_NAME] = raw_df[dkp_name_col].map(normalize_text)
-    else:
-        df[CanonicalColumns.DKP_NAME] = ""
-        warnings.append(
-            f"Live_Data: no '{dkp_name_col}' column found — product names will be blank in the "
-            f"outputs. Rename the column in the file, or fix its name in Settings."
-        )
 
     df = _drop_missing_identifiers(
         df,
@@ -196,6 +187,26 @@ def _volume_series(raw_df: pd.DataFrame, raw_column: str) -> pd.Series:
     return pd.to_numeric(raw_df[raw_column], errors="coerce")
 
 
+def _missing_volume_column_message(volume_metric: str, names: dict[str, str], raw_df: pd.DataFrame) -> str:
+    """A specific, actionable error for the ranking metric's column being absent."""
+    label = VolumeMetric.LABELS[volume_metric]
+    column = names[VolumeMetric.FIELD_KEY[volume_metric]]
+    others = [
+        VolumeMetric.LABELS[m] for m in VolumeMetric.ALL
+        if m != volume_metric and names[VolumeMetric.FIELD_KEY[m]] in raw_df.columns
+    ]
+    switch_hint = f"switch the ranking metric to {others[0]}, " if others else ""
+    switch_hint_fa = f"مبنای رتبه‌بندی را روی {others[0]} بگذارید، " if others else ""
+    return (
+        f"Ranking by {label} needs a '{column}' column, but Sold_Data doesn't have one. "
+        f"Either {switch_hint}add that column to the file, or — if the file names it "
+        f"differently — set its real name in Settings. Found columns: {list(raw_df.columns)}\n\n"
+        f"برای رتبه‌بندی بر اساس {label} ستون «{column}» لازم است ولی در فایل Sold_Data نیست. "
+        f"یا {switch_hint_fa}یا این ستون را به فایل اضافه کنید، یا اگر در فایل با اسم دیگری "
+        f"آمده، اسم واقعی‌اش را در تنظیمات وارد کنید."
+    )
+
+
 def load_sold_data(
     file: BinaryIO | bytes,
     *,
@@ -212,7 +223,7 @@ def load_sold_data(
             left blank (NaN) otherwise. None requires neither (used where
             no ranking happens, e.g. just listing the file's categories).
 
-    Output columns: seller_id, seller, seller_key, dkp, dkpc, weight,
+    Output columns: seller_id, seller, seller_key, dkp, dkp_name, dkpc, weight,
                     category, net_item_fcast, nmv_fcast
     """
     warnings: list[str] = []
@@ -221,14 +232,19 @@ def load_sold_data(
         names["sold_seller_id"], names["sold_seller"], names["sold_dkp"], names["sold_dkpc"],
         names["sold_weight_source"], names["sold_category"],
     ]
-    if volume_metric is not None:
-        if volume_metric not in VolumeMetric.ALL:
-            raise ExcelValidationError(
-                f"Unknown volume metric '{volume_metric}'. Expected one of {list(VolumeMetric.ALL)}."
-            )
-        required.append(names[VolumeMetric.FIELD_KEY[volume_metric]])
+    if volume_metric is not None and volume_metric not in VolumeMetric.ALL:
+        raise ExcelValidationError(
+            f"Unknown volume metric '{volume_metric}'. Expected one of {list(VolumeMetric.ALL)}."
+        )
     raw_df = _read_tabular_any_engine(file, source_name="Sold_Data", filename=filename)
     _require_columns(raw_df, tuple(required), source_name="Sold_Data")
+
+    available_volume_metrics = [
+        metric for metric in VolumeMetric.ALL
+        if names[VolumeMetric.FIELD_KEY[metric]] in raw_df.columns
+    ]
+    if volume_metric is not None and volume_metric not in available_volume_metrics:
+        raise ExcelValidationError(_missing_volume_column_message(volume_metric, names, raw_df))
 
     df = pd.DataFrame(
         {
@@ -242,6 +258,18 @@ def load_sold_data(
             CanonicalColumns.NMV_FCAST: _volume_series(raw_df, names["sold_nmv_fcast"]),
         }
     )
+
+    # Product name is report-only enrichment, never a matching input, so a
+    # file without that column loads fine — names just come out blank.
+    dkp_name_col = names["sold_dkp_name"]
+    if dkp_name_col in raw_df.columns:
+        df[CanonicalColumns.DKP_NAME] = raw_df[dkp_name_col].map(normalize_text)
+    else:
+        df[CanonicalColumns.DKP_NAME] = ""
+        warnings.append(
+            f"Sold_Data: no '{dkp_name_col}' column found — product names will be blank in the "
+            f"outputs. Rename the column in the file, or fix its name in Settings."
+        )
 
     df = _drop_missing_identifiers(
         df,
@@ -262,4 +290,4 @@ def load_sold_data(
 
     df = df.drop(columns=[CanonicalColumns.SOURCE_TEXT])
     logger.info("Loaded Sold_Data: %d rows after cleaning.", len(df))
-    return LoadResult(df=df, warnings=warnings)
+    return LoadResult(df=df, warnings=warnings, available_volume_metrics=available_volume_metrics)

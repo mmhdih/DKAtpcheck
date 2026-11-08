@@ -9,6 +9,9 @@ Endpoints:
     GET  /api/v1/field-names                    current raw column names (with saved overrides)
     POST /api/v1/field-names                    save raw-column-name overrides (Settings panel)
     POST /api/v1/field-names/reset              revert raw column names to built-in defaults
+    GET  /api/v1/bullion-defaults               categories pre-selected as Bullion (with saved changes)
+    POST /api/v1/bullion-defaults               save the default Bullion categories (Settings panel)
+    POST /api/v1/bullion-defaults/reset         revert default Bullion categories to built-in list
     POST /api/v1/sold-data/categories           distinct category_name_fa values in a Sold_Data file
     POST /api/v1/calculate                      run the full ATP pipeline on two uploaded files
     GET  /api/v1/download/summary/{result_id}       Summary.xlsx
@@ -37,11 +40,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from .atp_engine import ATPEngine, ATPIndex, ATPResult, assign_bucket, attach_dkp_names
-from .config import CanonicalColumns, TailClassification, VolumeMetric, get_settings
+from .bullion_defaults import (
+    get_default_bullion_categories,
+    reset_default_bullion_categories,
+    save_default_bullion_categories,
+)
+from .config import CanonicalColumns, CategoryBucket, TailClassification, VolumeMetric, get_settings
 from .excel_loader import ExcelValidationError, load_live_data, load_sold_data
 from .field_names import DEFAULT_FIELD_NAMES, FIELD_LABELS, get_field_names, reset_field_names, save_field_names
 from .missing_generator import build_missing, missing_to_excel_bytes
 from .models import (
+    BullionDefaultsResponse,
+    BullionDefaultsUpdateRequest,
     CalculationMeta,
     CalculationResponse,
     CategoryListResponse,
@@ -167,6 +177,31 @@ def reset_field_name_settings() -> FieldNamesResponse:
     return _field_names_response()
 
 
+def _bullion_defaults_response(categories: list[str]) -> BullionDefaultsResponse:
+    return BullionDefaultsResponse(
+        categories=categories,
+        builtin_default=list(CategoryBucket.DEFAULT_BULLION_CATEGORIES),
+    )
+
+
+@app.get(f"{settings.api_v1_prefix}/bullion-defaults", response_model=BullionDefaultsResponse)
+def get_bullion_defaults() -> BullionDefaultsResponse:
+    """Categories pre-selected as Bullion in the UI, including any saved changes."""
+    return _bullion_defaults_response(get_default_bullion_categories())
+
+
+@app.post(f"{settings.api_v1_prefix}/bullion-defaults", response_model=BullionDefaultsResponse)
+def update_bullion_defaults(payload: BullionDefaultsUpdateRequest) -> BullionDefaultsResponse:
+    """Replace the default Bullion categories, persisted to local storage."""
+    return _bullion_defaults_response(save_default_bullion_categories(payload.categories))
+
+
+@app.post(f"{settings.api_v1_prefix}/bullion-defaults/reset", response_model=BullionDefaultsResponse)
+def reset_bullion_defaults() -> BullionDefaultsResponse:
+    """Revert the default Bullion categories to the built-in list."""
+    return _bullion_defaults_response(reset_default_bullion_categories())
+
+
 @app.post(
     f"{settings.api_v1_prefix}/sold-data/categories",
     response_model=CategoryListResponse,
@@ -184,7 +219,10 @@ async def sold_data_categories(
     except ExcelValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     categories = sorted({c for c in sold_result.df[CanonicalColumns.CATEGORY] if c})
-    return CategoryListResponse(categories=categories)
+    return CategoryListResponse(
+        categories=categories,
+        available_volume_metrics=sold_result.available_volume_metrics,
+    )
 
 
 @app.post(
@@ -253,9 +291,9 @@ async def calculate(
         # depends on volume in the other bucket.
         sold_df = assign_bucket(sold_df, bullion_categories=set(bullion_categories))
 
-        # Product names ride along from here so every DKP-bearing report
-        # can show them without re-reading Live_Data.
-        sold_df = attach_dkp_names(sold_df, live_result.df)
+        # Product names (from Sold_Data's name column) ride along from here
+        # so every DKP-bearing report can show them.
+        sold_df = attach_dkp_names(sold_df)
 
         # Per-seller ranking is computed on the FULL bucketed universe (a
         # seller's own Pareto curve must reflect their true sales mix, not

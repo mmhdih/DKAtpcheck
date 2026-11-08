@@ -26,7 +26,6 @@ def test_load_live_data_happy_path():
             "Seller_ID": ["S1", "S2"],
             "Seller_Name": ["ACME", " Beta Co "],
             "DKP": ["D1", "D2"],
-            "DKP Name": ["Gold bracelet", " شمش طلا "],
             "DKPC": ["D1C1", "D2C1"],
             "Weight": ["0.65 گرم", 2.5],
         }
@@ -35,27 +34,50 @@ def test_load_live_data_happy_path():
     assert list(result.df["seller_id"]) == ["S1", "S2"]
     assert list(result.df["seller"]) == ["ACME", "Beta Co"]
     assert list(result.df["seller_key"]) == ["s1", "s2"]
-    assert list(result.df["dkp_name"]) == ["Gold bracelet", "شمش طلا"]
+    assert "dkp_name" not in result.df.columns
     assert result.df["weight"].tolist() == [0.65, 2.5]
     assert result.warnings == []
 
 
-def test_load_live_data_without_dkp_name_column_warns_but_still_loads():
-    # The product name only enriches reports, so an assortment export that
-    # doesn't carry it must not be rejected.
+def test_load_sold_data_reads_product_name_from_variant_name_by_default():
     df = pd.DataFrame(
         {
-            "Seller_ID": ["S1"],
-            "Seller_Name": ["ACME"],
-            "DKP": ["D1"],
-            "DKPC": ["D1C1"],
-            "Weight": [1.0],
+            "marketplace_seller_id": ["S1"],
+            "marketplace_seller_name": ["ACME"],
+            "product_id": ["D1"],
+            "product_variant_id": ["D1C1"],
+            "product_variant_name_fa": [" دستبند طلا | 0.65 گرم | "],
+            "category_name_fa": ["زیورآلات"],
+            "sum_net_item_fcast": [5],
         }
     )
-    result = load_live_data(_to_xlsx_bytes(df))
+    result = load_sold_data(_to_xlsx_bytes(df))
+    assert list(result.df["dkp_name"]) == ["دستبند طلا | 0.65 گرم |"]
+    assert result.df["weight"].iloc[0] == pytest.approx(0.65)
+    assert result.warnings == []
+
+
+def test_load_sold_data_without_name_column_warns_but_still_loads():
+    # The product name only enriches reports, so a file whose name column
+    # (renamed away from the weight source here) is missing must still load.
+    from backend import field_names as fn
+
+    fn.save_field_names({"sold_dkp_name": "Product Title"})
+    df = pd.DataFrame(
+        {
+            "marketplace_seller_id": ["S1"],
+            "marketplace_seller_name": ["ACME"],
+            "product_id": ["D1"],
+            "product_variant_id": ["D1C1"],
+            "product_variant_name_fa": [1.0],
+            "category_name_fa": [""],
+            "sum_net_item_fcast": [5],
+        }
+    )
+    result = load_sold_data(_to_xlsx_bytes(df))
     assert len(result.df) == 1
     assert list(result.df["dkp_name"]) == [""]
-    assert any("DKP Name" in w for w in result.warnings)
+    assert any("Product Title" in w for w in result.warnings)
 
 
 def test_load_live_data_missing_column_raises():

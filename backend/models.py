@@ -83,6 +83,23 @@ class CategoryListResponse(BaseModel):
     """Response of POST /api/v1/sold-data/categories."""
 
     categories: list[str]
+    available_volume_metrics: list[str] = Field(
+        default_factory=list,
+        description="Which ranking metrics ('net_item', 'nmv') have their column in this file.",
+    )
+
+
+class BullionDefaultsResponse(BaseModel):
+    """Response of GET/POST /api/v1/bullion-defaults."""
+
+    categories: list[str]
+    builtin_default: list[str]
+
+
+class BullionDefaultsUpdateRequest(BaseModel):
+    """Body of POST /api/v1/bullion-defaults — the full new list (replaces the old one)."""
+
+    categories: list[str] = Field(default_factory=list)
 
 
 class SummaryRow(BaseModel):

@@ -127,7 +127,7 @@ purely for display and is never used to match rows across files.
 | `Seller_Name` | `marketplace_seller_name` | `seller` | display only |
 | `DKP` | `product_id` | `dkp` | |
 | `DKPC` | `product_variant_id` | `dkpc` | |
-| `DKP Name` | — | `dkp_name` | **optional** product name, report-only; looked up per DKP (see below) |
+| — | `product_variant_name_fa` | `dkp_name` | **optional** product name (DKP Name), report-only; column editable in Settings (see below) |
 | `Weight` | `product_variant_name_fa` | `weight` | parsed via the same numeric/"`<n> گرم`" logic on both sides |
 | — | `category_name_fa` | `category` | Sold_Data only; drives the Bullion/Jewelry bucket |
 | — | `sum_net_item_fcast` | `net_item_fcast` | Sold_Data only; drives the ST/MT/LT tail badge when the **Net item** metric is selected (required only then) |
@@ -139,14 +139,16 @@ example templates straight from the app (`⬇ Live_Data template` /
 `GET /api/v1/templates/sold-data`) so column names never have to be
 guessed.
 
-The **product name** (`DKP Name`) is read from the assortment
-(Live_Data) and shown next to the DKP in every DKP-bearing output. The
-column is optional: without it the file still loads, you get a warning
-and the name column comes out blank. The lookup is keyed on the **DKP
-alone, not on the seller**, because a DKP is a marketplace-wide product
-id — that is what lets a seller's *unavailable* items (exactly what the
-Missing report is about) still resolve their name from another seller's
-live row. A DKP nobody has live stays blank.
+The **product name** (`DKP Name`) is read from **Sold_Data** — by
+default from `product_variant_name_fa` (the same column weight is parsed
+from), and any other column can be chosen in **Settings → Sold_Data —
+Product name (DKP Name) column**. It is shown next to the DKP in every
+DKP-bearing output. The column is optional: without it the file still
+loads, you get a warning and the name column comes out blank. Each row
+keeps its own name (so in DKPC-level reports the name matches that
+variant's weight); only a blank name is back-filled with the first
+non-blank name of the same DKP anywhere in the file, keyed on the **DKP
+alone, not on the seller**, since a DKP is a marketplace-wide product id.
 
 If a seller renames one of these raw columns (e.g. the weight column
 above used to be `Size_Name` and is now `Weight`), no code change is
@@ -423,8 +425,12 @@ same `put()`/`get()` interface — nothing else needs to change.
 - The frontend's Bullion-labels picker defaults to pre-selecting
   `شمش طلا`, `پک شمش و پلاک طلا`, `سکه و شمش نقره`, and
   `سکه پارسیان (گرمی)` whenever they appear in the uploaded Sold_Data's
-  categories (`frontend/streamlit_app.py::DEFAULT_BULLION_CATEGORIES`) —
-  still fully editable per calculation, this is just the starting point.
+  categories — still fully editable per calculation, this is just the
+  starting point. That default list is itself editable from **Settings →
+  Default Bullion labels** (one label per line), or by saving the current
+  selection with the "📌 save as default" button under the picker. It's
+  stored in `~/.atp_analyzer/bullion_categories.json`; the built-in list
+  lives in `backend/config.py::CategoryBucket.DEFAULT_BULLION_CATEGORIES`.
 - CSV uploads try `utf-8-sig` → `cp1256` → `utf-8` encodings in order and
   auto-detect the delimiter (Iranian Excel exports mix `,` and `;`
   depending on regional settings) — see `ATP_CSV_ENCODING_PREFERENCE`.

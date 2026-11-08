@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from backend import field_names as fn
-from backend.excel_loader import load_live_data
+from backend.excel_loader import load_live_data, load_sold_data
 
 
 @pytest.fixture(autouse=True)
@@ -50,31 +50,42 @@ def test_reset_field_names_reverts_everything():
     assert fn.get_field_names() == fn.DEFAULT_FIELD_NAMES
 
 
-def test_dkp_name_column_is_editable_and_defaults_to_dkp_name():
-    assert fn.DEFAULT_FIELD_NAMES["live_dkp_name"] == "DKP Name"
-    fn.save_field_names({"live_dkp_name": "Product Title"})
-    assert fn.get_field_names()["live_dkp_name"] == "Product Title"
+def test_dkp_name_column_is_a_sold_data_field_defaulting_to_variant_name():
+    assert "live_dkp_name" not in fn.DEFAULT_FIELD_NAMES
+    assert fn.DEFAULT_FIELD_NAMES["sold_dkp_name"] == "product_variant_name_fa"
+    fn.save_field_names({"sold_dkp_name": "Product Title"})
+    assert fn.get_field_names()["sold_dkp_name"] == "Product Title"
 
 
 def test_excel_loader_honors_renamed_dkp_name_column():
-    fn.save_field_names({"live_dkp_name": "Product Title"})
+    fn.save_field_names({"sold_dkp_name": "Product Title"})
     df = pd.DataFrame(
         {
-            "Seller_ID": ["S1"],
-            "Seller_Name": ["ACME"],
-            "DKP": ["D1"],
+            "marketplace_seller_id": ["S1"],
+            "marketplace_seller_name": ["ACME"],
+            "product_id": ["D1"],
+            "product_variant_id": ["D1C1"],
+            "product_variant_name_fa": ["0.65 گرم"],
+            "category_name_fa": [""],
+            "sum_net_item_fcast": [5],
             "Product Title": ["Gold bracelet"],
-            "DKPC": ["D1C1"],
-            "Weight": [2.5],
         }
     )
     buf = BytesIO()
     df.to_excel(buf, index=False, engine="openpyxl")
     buf.seek(0)
 
-    result = load_live_data(buf)
+    result = load_sold_data(buf)
     assert list(result.df["dkp_name"]) == ["Gold bracelet"]
     assert result.warnings == []
+
+
+def test_old_live_dkp_name_override_is_ignored():
+    # A field_names.json saved by an older version may still carry the
+    # retired "live_dkp_name" key; it must be ignored, not crash.
+    fn._SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+    fn._SETTINGS_FILE.write_text('{"live_dkp_name": "Product Title"}', encoding="utf-8")
+    assert fn.get_field_names() == fn.DEFAULT_FIELD_NAMES
 
 
 def test_excel_loader_honors_saved_field_name_override():

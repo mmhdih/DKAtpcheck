@@ -136,7 +136,9 @@ TAIL_BADGE_OPTIONS = ["ST", "MT", "LT"]
 DEFAULT_VOLUME_METRICS = [{"key": "net_item", "label": "Net item"}, {"key": "nmv", "label": "NMV"}]
 VOLUME_METRIC_SOURCE_COLUMN = {"net_item": "sum_net_item_fcast", "nmv": "sum_nmv_fcast"}
 
-DEFAULT_BULLION_CATEGORIES = [
+# Fallback only if an older backend has no /bullion-defaults endpoint; the
+# real list is user-editable in Settings (backend/bullion_defaults.py).
+FALLBACK_BULLION_CATEGORIES = [
     "شمش طلا",
     "پک شمش و پلاک طلا",
     "سکه و شمش نقره",
@@ -170,6 +172,34 @@ def _reset_field_names() -> dict:
     return resp.json()
 
 
+@st.cache_data(ttl=5, show_spinner=False)
+def _fetch_bullion_defaults() -> dict:
+    resp = requests.get(f"{API}/bullion-defaults", timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _save_bullion_defaults(categories: list[str]) -> dict:
+    resp = requests.post(f"{API}/bullion-defaults", json={"categories": categories}, timeout=10)
+    resp.raise_for_status()
+    _fetch_bullion_defaults.clear()
+    return resp.json()
+
+
+def _reset_bullion_defaults() -> dict:
+    resp = requests.post(f"{API}/bullion-defaults/reset", timeout=10)
+    resp.raise_for_status()
+    _fetch_bullion_defaults.clear()
+    return resp.json()
+
+
+def _default_bullion_categories() -> list[str]:
+    try:
+        return _fetch_bullion_defaults()["categories"]
+    except requests.RequestException:
+        return FALLBACK_BULLION_CATEGORIES
+
+
 @st.cache_data(show_spinner=False)
 def _fetch_template(kind: str) -> bytes:
     resp = requests.get(f"{API}/templates/{kind}", timeout=30)
@@ -178,12 +208,13 @@ def _fetch_template(kind: str) -> bytes:
 
 
 @st.cache_data(show_spinner=False)
-def _fetch_categories(sold_bytes: bytes, filename: str) -> list[str]:
+def _fetch_sold_data_info(sold_bytes: bytes, filename: str) -> dict:
+    """Categories in the file, plus which ranking metrics (Net item / NMV) it has a column for."""
     resp = requests.post(
         f"{API}/sold-data/categories", files={"sold_file": (filename, sold_bytes)}, timeout=60
     )
     resp.raise_for_status()
-    return resp.json()["categories"]
+    return resp.json()
 
 
 try:
@@ -198,7 +229,7 @@ except requests.RequestException:
 # --------------------------------------------------------------------------- #
 # Settings — editable raw column names, persisted locally on this machine
 # --------------------------------------------------------------------------- #
-with st.expander("⚙️ تنظیمات — نام ستون‌های اکسل (Settings — column names)", expanded=False):
+with st.expander("⚙️ تنظیمات — نام ستون‌ها و لیبل‌های پیش‌فرض شمش (Settings)", expanded=False):
     st.caption(
         "اگه فروشنده اسم یکی از ستون‌های Live_Data یا Sold_Data رو تغییر داد (مثلاً ستون وزن)، "
         "می‌تونی همینجا اصلاحش کنی. مقادیر روی همین سیستم ذخیره می‌شن و دیگه لازم نیست هر بار "
@@ -254,6 +285,48 @@ with st.expander("⚙️ تنظیمات — نام ستون‌های اکسل (S
             except requests.RequestException as exc:
                 st.error(f"بازگردانی با خطا مواجه شد: {exc}")
 
+    st.divider()
+    st.markdown("**لیبل‌های پیش‌فرض شمش (Default Bullion labels)**")
+    st.caption(
+        "این دسته‌بندی‌ها (مقدار ستون category_name_fa) بعد از آپلود Sold_Data به‌صورت خودکار "
+        "به‌عنوان شمش انتخاب می‌شن. هر لیبل در یک خط. اگه لیبلی تو فایل نباشه، نادیده گرفته میشه."
+    )
+    try:
+        bullion_defaults_cfg = _fetch_bullion_defaults()
+    except requests.RequestException as exc:
+        bullion_defaults_cfg = None
+        st.warning(f"لیبل‌های پیش‌فرض شمش در دسترس نیست: {exc}")
+
+    if bullion_defaults_cfg:
+        with st.form("bullion_defaults_form"):
+            bullion_text = st.text_area(
+                "لیبل‌های شمش — هر کدام در یک خط",
+                value="\n".join(bullion_defaults_cfg["categories"]),
+                height=150,
+            )
+            st.caption("پیش‌فرض داخلی برنامه: " + "، ".join(bullion_defaults_cfg["builtin_default"]))
+            bcol1, bcol2 = st.columns(2)
+            save_bullion_clicked = bcol1.form_submit_button("💾 ذخیره", use_container_width=True)
+            reset_bullion_clicked = bcol2.form_submit_button(
+                "↩️ بازگردانی به پیش‌فرض", use_container_width=True
+            )
+
+        if save_bullion_clicked:
+            try:
+                _save_bullion_defaults([line for line in bullion_text.splitlines() if line.strip()])
+                st.success("لیبل‌های پیش‌فرض شمش ذخیره شد.")
+                st.rerun()
+            except requests.RequestException as exc:
+                st.error(f"ذخیره لیبل‌های شمش با خطا مواجه شد: {exc}")
+
+        if reset_bullion_clicked:
+            try:
+                _reset_bullion_defaults()
+                st.success("لیبل‌های شمش به پیش‌فرض بازگشت.")
+                st.rerun()
+            except requests.RequestException as exc:
+                st.error(f"بازگردانی لیبل‌های شمش با خطا مواجه شد: {exc}")
+
 # --------------------------------------------------------------------------- #
 # Inputs
 # --------------------------------------------------------------------------- #
@@ -304,14 +377,26 @@ st.markdown('<div class="atp-card">', unsafe_allow_html=True)
 st.subheader("3. Categories & Item-Tail filters")
 
 bullion_categories: list[str] = []
+sold_available_metrics: list[str] | None = None  # None = unknown (no file / older backend)
 if sold_file is not None:
     try:
-        categories = _fetch_categories(sold_file.getvalue(), sold_file.name)
-        default_bullion = [c for c in DEFAULT_BULLION_CATEGORIES if c in categories]
+        sold_info = _fetch_sold_data_info(sold_file.getvalue(), sold_file.name)
+        categories = sold_info["categories"]
+        sold_available_metrics = sold_info.get("available_volume_metrics")
+        default_bullion = [c for c in _default_bullion_categories() if c in categories]
         bullion_categories = st.multiselect(
             "لیبل‌های شمش (Bullion labels) — everything else is treated as Jewelry",
             options=categories, default=default_bullion,
         )
+        if st.button(
+            "📌 ذخیره‌ی همین انتخاب به‌عنوان پیش‌فرض شمش",
+            help="دفعه‌های بعد همین لیبل‌ها خودکار انتخاب می‌شن. از تنظیمات هم قابل ویرایشه.",
+        ):
+            try:
+                _save_bullion_defaults(bullion_categories)
+                st.success("انتخاب فعلی به‌عنوان پیش‌فرض شمش ذخیره شد.")
+            except requests.RequestException as exc:
+                st.error(f"ذخیره با خطا مواجه شد: {exc}")
     except requests.RequestException as exc:
         st.warning(f"Couldn't preview Sold_Data categories yet: {exc}")
 else:
@@ -335,6 +420,14 @@ volume_metric = st.radio(
     ),
 )
 volume_column = VOLUME_METRIC_SOURCE_COLUMN.get(volume_metric, volume_metric)
+if sold_available_metrics is not None and volume_metric not in sold_available_metrics:
+    other_metrics = [volume_metric_labels.get(m, m) for m in sold_available_metrics]
+    switch_hint = f"مبنا را روی **{other_metrics[0]}** بگذارید، " if other_metrics else ""
+    st.warning(
+        f"فایل Sold_Data ستون مربوط به **{volume_metric_labels.get(volume_metric, volume_metric)}** "
+        f"را ندارد، پس محاسبه با این مبنا خطا می‌دهد. یا {switch_hint}یا این ستون را به فایل "
+        "اضافه کنید، یا اگر در فایل با اسم دیگری آمده، اسمش را در تنظیمات (بالای صفحه) وارد کنید."
+    )
 
 tail_badges = st.multiselect(
     f"Item-Tail badges to include (ST/MT/LT, ranked by {volume_column} marketplace-wide, separately for Bullion and Jewelry)",

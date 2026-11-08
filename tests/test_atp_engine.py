@@ -199,36 +199,27 @@ def test_extra_columns_ride_through_to_result(index):
 # --------------------------------------------------------------------------- #
 # attach_dkp_names
 # --------------------------------------------------------------------------- #
-def test_attach_dkp_names_resolves_from_live_data():
-    live = _live([("ACME", "D1", "D1C1", 0.65)])
-    live[C.DKP_NAME] = "Gold bracelet"
-    sold = _sold([("ACME", "D1", "D1C1", 0.65)])
-    named = attach_dkp_names(sold, live)
-    assert list(named[C.DKP_NAME]) == ["Gold bracelet"]
+def test_attach_dkp_names_keeps_each_rows_own_name():
+    # With the default name column (the variant name) each DKPC row must
+    # keep its own name, so it stays consistent with its own weight.
+    sold = _sold([("ACME", "D1", "D1C1", 0.65), ("ACME", "D1", "D1C2", 1.0)])
+    sold[C.DKP_NAME] = ["Bracelet | 0.65 g", "Bracelet | 1 g"]
+    named = attach_dkp_names(sold)
+    assert list(named[C.DKP_NAME]) == ["Bracelet | 0.65 g", "Bracelet | 1 g"]
 
 
-def test_attach_dkp_names_is_marketplace_wide_not_per_seller():
-    # The name of a DKP this seller no longer has live — exactly the rows
-    # the Missing report is about — still resolves from another seller's
-    # live row, because a DKP is a marketplace-wide product id.
-    live = _live([("Beta Co", "D1", "D1C9", 1.0)])
-    live[C.DKP_NAME] = "Gold bracelet"
-    sold = _sold([("ACME", "D1", "D1C1", 0.65)])
-    named = attach_dkp_names(sold, live)
-    assert list(named[C.DKP_NAME]) == ["Gold bracelet"]
+def test_attach_dkp_names_backfills_blank_names_from_same_dkp_any_seller():
+    # A blank name is filled from the same DKP elsewhere in the file —
+    # marketplace-wide, since a DKP is a marketplace product id.
+    sold = _sold([("Beta Co", "D1", "D1C9", 1.0), ("ACME", "D1", "D1C1", 0.65)])
+    sold[C.DKP_NAME] = ["Gold bracelet", ""]
+    named = attach_dkp_names(sold)
+    assert list(named[C.DKP_NAME]) == ["Gold bracelet", "Gold bracelet"]
 
 
-def test_attach_dkp_names_leaves_unknown_dkps_blank_without_dropping_rows():
-    live = _live([("ACME", "D1", "D1C1", 0.65)])
-    live[C.DKP_NAME] = "Gold bracelet"
+def test_attach_dkp_names_leaves_unnamed_dkps_blank_without_dropping_rows():
     sold = _sold([("ACME", "D1", "D1C1", 0.65), ("ACME", "D_UNKNOWN", "D_UC1", 1.0)])
-    named = attach_dkp_names(sold, live)
+    sold[C.DKP_NAME] = ["Gold bracelet", ""]
+    named = attach_dkp_names(sold)
     assert list(named[C.DKP_NAME]) == ["Gold bracelet", ""]
     assert len(named) == 2
-
-
-def test_attach_dkp_names_blank_when_live_data_has_no_names():
-    live = _live([("ACME", "D1", "D1C1", 0.65)])  # dkp_name is "" throughout
-    sold = _sold([("ACME", "D1", "D1C1", 0.65)])
-    named = attach_dkp_names(sold, live)
-    assert list(named[C.DKP_NAME]) == [""]
