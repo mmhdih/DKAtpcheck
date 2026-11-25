@@ -1,14 +1,15 @@
 """
 launcher.py
 ------------
-Single entry point for the packaged Windows executable. Starts the
-FastAPI backend and the Streamlit frontend as background threads inside
-ONE process, waits for both to come up, then opens the default browser
-pointed at the Streamlit UI.
+Single entry point for the app. Starts the FastAPI backend and the
+Streamlit frontend as background threads inside ONE process, waits for
+both to come up, then opens the default browser pointed at the Streamlit
+UI.
 
-This is the file PyInstaller freezes (see build_windows.spec).
-It also runs fine directly with `python launcher.py` from source,
-which is the easiest way to test changes before building the .exe.
+The portable Windows build runs this file with its bundled Python via
+ATP_Analyzer.bat (see scripts/build_portable.ps1). It also runs fine
+directly with `python launcher.py` from source, which is the easiest way
+to test changes before building.
 """
 from __future__ import annotations
 

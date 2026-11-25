@@ -380,7 +380,7 @@ the API layer) needs to change.
 `ATP_MAX_UPLOAD_SIZE_MB` only governs the FastAPI backend's own check.
 Streamlit enforces its own upload cap independently (default 200MB) —
 this repo's `.streamlit/config.toml` (`server.maxUploadSize`) and
-`launcher.py` (the packaged .exe entry point) both raise it to match, so
+`launcher.py` (the app's single entry point) both raise it to match, so
 raise both together if you increase the limit further.
 
 There are no environment variables for the ST/MT/LT cumulative cutoffs
@@ -435,130 +435,84 @@ same `put()`/`get()` interface — nothing else needs to change.
   auto-detect the delimiter (Iranian Excel exports mix `,` and `;`
   depending on regional settings) — see `ATP_CSV_ENCODING_PREFERENCE`.
 
-## 💻 Packaging as a Windows .exe
+## 💻 Packaging for Windows (portable folder)
 
 > 🚀 **Don't want to build it yourself?** Grab the latest portable,
 > no-install-needed build straight from this repo's **[Releases](../../releases)**
-> page — extract the zip and double-click `ATP_Analyzer.exe`.
+> page — extract the zip and double-click `ATP_Analyzer\ATP_Analyzer.bat`.
 
-There are two ways to get `ATP_Analyzer.exe`: build it locally on a
-Windows machine, or let GitHub build it for you in the cloud (useful if
-your machine is company-managed and locked down — no admin rights,
-registry edits, or local Python installation needed).
+The Windows build is a **portable folder**, not a PyInstaller `.exe`:
+
+```
+ATP_Analyzer\
+    ATP_Analyzer.bat   <- double-click this
+    python\            <- official embeddable Python 3.12 + all dependencies
+    app\               <- backend\, frontend\, launcher.py, .streamlit\
+```
+
+**Why not an .exe?** Windows Defender kept quarantining the PyInstaller
+executable as malware — a heuristic false positive on PyInstaller's
+packaging that persisted even with a self-compiled bootloader, no UPX and
+version metadata. The portable folder ships the official
+[embeddable Python](https://docs.python.org/3/using/windows.html#the-embeddable-package)
+from python.org, whose `python.exe` is digitally signed by the Python
+Software Foundation (the build refuses to continue if that signature isn't
+valid), plus the app's plain `.py` source — there is no unsigned
+executable left for antivirus to flag.
+
+`launcher.py` is the single entry point: it starts the FastAPI backend and
+the Streamlit frontend in one process and opens your browser.
+`ATP_Analyzer.bat` just runs it with the bundled Python. Close the console
+window to stop the app. Always keep the whole folder together.
+
+The build logic lives in one script, `scripts/build_portable.ps1`, used by
+both options below.
 
 ### Option A — Let GitHub build it for you (no local build, no admin rights)
 
-A ready-made workflow (`.github/workflows/build-windows.yml`) is already
-included. It spins up a clean, disposable Windows machine on GitHub's
-servers, builds the app there with a normal Python installation (not the
-Microsoft Store version, so none of its long-path/permission quirks
-apply), and hands you a downloadable .exe. None of this touches your own
+The workflow `.github/workflows/build-windows.yml` runs on a clean,
+disposable Windows machine on GitHub's servers. It runs the test suite,
+builds the portable folder, then **starts the packaged app and runs a real
+calculation against it** (`scripts/smoke_check.py`) — a broken package fails
+the build instead of being published. None of this touches your own
 computer.
 
-1. Create a free account at [github.com](https://github.com) if you
-   don't have one.
-2. Click **+ → New repository** (top right). Give it any name (e.g.
-   `atp-analyzer`), keep it Public or Private, then **Create repository**.
-3. On the new repo's page, click **"uploading an existing file"** (or
-   **Add file → Upload files**). Drag in the *entire contents* of this
-   project folder (everything inside the zip you were given — `backend/`,
-   `frontend/`, `.github/`, `requirements.txt`, `build_windows.spec`,
-   etc.). This works entirely from the browser — no `git` command needed.
-4. Commit the upload ("Commit changes").
-5. Go to the **Actions** tab of your new repo. A run named
-   *"Build Windows executable"* should already be starting (it triggers
-   automatically on upload). If it isn't there, click the workflow on the
-   left, then **"Run workflow"**.
-6. Wait for the green checkmark (a few minutes).
-7. Click into the finished run, scroll to **Artifacts** at the bottom,
-   and download **ATP_Analyzer-windows** — this is your built app as a
-   .zip.
-8. Extract it anywhere on your Windows machine and double-click
-   `ATP_Analyzer.exe`.
-
-If your company network blocks github.com, try this from a personal
-device/network instead — you only need GitHub to *build* it; the
-resulting .exe runs on any Windows machine afterwards, including the
-locked-down one.
+1. Go to the repo's **Actions** tab → **Build Windows app** → **Run
+   workflow** (it also runs automatically on every push to `main`).
+   Fill in `release_tag` (e.g. `V8`) to also publish a Release.
+2. Wait for the green checkmark (a few minutes).
+3. Download **ATP_Analyzer-windows** from the run's **Artifacts** (or the
+   zip from the Release), extract it, and double-click
+   `ATP_Analyzer.bat`.
 
 ### Option B — Build locally on Windows
 
-`launcher.py` is a single entry point that starts the FastAPI backend and
-the Streamlit frontend as one process and opens your browser — this is
-what gets frozen into the .exe.
-
-**You must build ON Windows** (PyInstaller does not cross-compile — a
-Linux or Mac machine can't produce a Windows .exe).
-
-Copy this project folder onto the Windows machine, then from the project
-root run:
+Needs internet access and any Python 3 with pip on `PATH` (only used to
+run pip — the dependency wheels are picked for the bundled Python 3.12,
+whatever your own Python version is). From the project root:
 
 ```bat
 build_windows.bat
 ```
 
-That script creates a virtualenv, installs `requirements.txt` +
-`pyinstaller`, and runs `pyinstaller build_windows.spec`. The result is a
-folder:
-
-```
-dist\ATP_Analyzer\
-    ATP_Analyzer.exe
-    ... (dependencies)
-```
-
-Double-click `ATP_Analyzer.exe` — it starts both servers in the background
-and opens your default browser to the app. **Distribute the whole
-`dist\ATP_Analyzer` folder**, not just the .exe file; the process needs
-the files sitting next to it.
-
-Manual equivalent, if you'd rather not use the .bat file:
-
-```bat
-pip install -r requirements.txt
-pip install pyinstaller
-pyinstaller --noconfirm build_windows.spec
-```
-
-### Why a .spec file instead of plain `pyinstaller launcher.py`
-
-Streamlit ships its compiled frontend (HTML/JS/CSS) as package data, not
-Python source — a plain PyInstaller run won't find it, and the app will
-fail immediately with missing-file errors. `build_windows.spec` uses
-`collect_all(...)` for streamlit, pandas, fastapi, uvicorn, and the other
-libraries with the same issue, so all their non-`.py` assets are bundled
-automatically.
+The result is `dist\ATP_Analyzer\`; start it with
+`dist\ATP_Analyzer\ATP_Analyzer.bat`.
 
 ### Troubleshooting
 
+- **Windows warns before running the .bat ("Open File – Security
+  Warning")**: files extracted from a zip downloaded from the internet
+  carry a "downloaded from the internet" mark. Before extracting,
+  right-click the zip → **Properties** → tick **Unblock** → OK.
 - **`OSError: [Errno 2] No such file or directory` mentioning a path like
   `AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\...`**:
-  this means Python was installed from the Microsoft Store, whose deeply
-  nested install path combined with Streamlit's own nested package files
-  exceeds Windows' 260-character path limit — this is a known, common
-  issue (it happens with several other large packages too, not just
-  Streamlit) and isn't specific to this project. On a restricted/managed
-  machine where you can't install a different Python or edit the
-  registry, use **Option A above** (GitHub builds it for you) instead.
-- **Antivirus flags the .exe / SmartScreen warning**: unsigned PyInstaller
-  executables are a common antivirus false positive. The build already
-  reduces this: the GitHub workflow compiles PyInstaller's bootloader from
-  source (instead of reusing the stock one shared with countless other
-  exes), UPX compression is disabled, and the exe carries Windows version
-  metadata (`version_info.txt`). If Defender still quarantines a build,
-  report it as a false positive at
-  https://www.microsoft.com/wdsi/filesubmission, and code-sign the binary
-  if you're distributing it widely. Local `build_windows.bat` builds use
-  the stock bootloader, so prefer the GitHub-built release.
-- **"Could not find module" at runtime**: add the missing package's name
-  to `COLLECT_ALL_PACKAGES` in `build_windows.spec` and rebuild.
-- **Large output folder / slow first launch**: onedir (used here) is much
-  faster to start than `--onefile`, at the cost of a bigger folder rather
-  than a single file. Stick with onedir unless you specifically need a
-  single-file artifact.
-- **Want to hide the console window**: set `console=False` in
-  `build_windows.spec` once you've confirmed everything works with it
-  visible — the console is invaluable for reading the first few errors.
+  this only affects *running from source* with a Microsoft Store Python
+  (its nested install path exceeds Windows' 260-character path limit).
+  Use the portable build instead.
+- **Antivirus still flags something**: report it as a false positive at
+  https://www.microsoft.com/wdsi/filesubmission. The executables in the
+  folder are python.org's signed `python.exe`/`pythonw.exe` and native
+  modules from the dependencies' official wheels.
 - **Want a proper desktop window instead of a browser tab**: swap
   `webbrowser.open(...)` in `launcher.py` for a
   [`pywebview`](https://pywebview.flowrl.com/) window pointed at the same
