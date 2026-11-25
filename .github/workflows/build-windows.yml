@@ -1,4 +1,4 @@
-name: Build Windows executable
+name: Build Windows app
 
 # Runs automatically on every push to main/master, on any version tag
 # (e.g. v1.0.0 or V2), and can also be triggered manually from the
@@ -6,6 +6,19 @@ name: Build Windows executable
 # optionally publish a release too, by filling in "release_tag" — handy
 # when you can't push a tag directly (e.g. restricted git credentials)
 # but still want a Release cut from the current branch.
+#
+# What it builds: a PORTABLE folder, not a PyInstaller .exe. Windows
+# Defender kept quarantining the PyInstaller executable as malware (a
+# heuristic false positive on PyInstaller's packaging, even with a
+# self-compiled bootloader). Instead the app ships with the official
+# "embeddable" Python from python.org, whose python.exe is digitally
+# signed by the Python Software Foundation, plus the app's .py source and
+# a small ATP_Analyzer.bat launcher — nothing unsigned to flag.
+#
+#   ATP_Analyzer/
+#     ATP_Analyzer.bat     <- double-click this
+#     python/              <- signed embeddable Python + all dependencies
+#     app/                 <- backend/, frontend/, launcher.py, .streamlit/
 on:
   push:
     branches: [main, master]
@@ -18,61 +31,72 @@ on:
         type: string
 
 permissions:
-  contents: write  # needed to publish a GitHub Release when a tag is pushed
+  contents: write  # needed to publish a GitHub Release
+
+env:
+  # Must be a release python.org ships an "embed-amd64" zip for (3.12.10
+  # is the last 3.12 release with binaries). The tests run on the same
+  # version, so they exercise exactly the interpreter that ships.
+  PYTHON_VERSION: "3.12.10"
+  APP_DIR: dist/ATP_Analyzer
 
 jobs:
   build:
-    # A clean, disposable Windows machine provided by GitHub — not your
-    # own computer, so none of its restrictions (admin rights, registry,
-    # Microsoft Store Python, long-path limits) apply here.
     runs-on: windows-latest
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python (regular python.org build, not Microsoft Store)
+      - name: Set up Python (same version as the embedded one)
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies
+      - name: Run the test suite
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          python -m pytest -q
 
-      # Build PyInstaller's bootloader FROM SOURCE instead of using the
-      # prebuilt one shipped in the PyPI wheel. That prebuilt bootloader is
-      # embedded in thousands of unrelated (including actual malware) exes,
-      # so antivirus engines - Windows Defender included - routinely flag
-      # and delete anything built with it. A freshly compiled bootloader
-      # (MSVC is preinstalled on windows-latest) has a unique signature and
-      # avoids those false positives.
-      - name: Install PyInstaller with a locally compiled bootloader
-        env:
-          PYINSTALLER_COMPILE_BOOTLOADER: "1"
+      - name: Build the portable app (embeddable Python + app + launcher)
+        shell: pwsh
+        run: ./scripts/build_portable.ps1 -PythonVersion $env:PYTHON_VERSION -OutDir $env:APP_DIR
+
+      - name: Smoke-test the packaged app
+        shell: pwsh
         run: |
-          pip install --verbose --no-cache-dir --no-binary=pyinstaller -r requirements-build.txt
+          $py = Resolve-Path "$env:APP_DIR/python/python.exe"
+          $proc = Start-Process -FilePath $py -ArgumentList "launcher.py" `
+            -WorkingDirectory (Resolve-Path "$env:APP_DIR/app") -PassThru `
+            -RedirectStandardOutput app-stdout.log -RedirectStandardError app-stderr.log
+          try {
+            & $py scripts/smoke_check.py
+            if ($LASTEXITCODE -ne 0) { throw "smoke test failed" }
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            Write-Host "---- app stdout ----"; Get-Content app-stdout.log -ErrorAction SilentlyContinue
+            Write-Host "---- app stderr ----"; Get-Content app-stderr.log -ErrorAction SilentlyContinue
+          }
+          # The smoke run writes fresh __pycache__ for the app; drop it so
+          # the shipped folder stays as built.
+          Get-ChildItem "$env:APP_DIR/app" -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
 
-      - name: Build ATP_Analyzer.exe
-        run: pyinstaller --noconfirm build_windows.spec
-
-      - name: Upload the built app as a downloadable artifact
+      - name: Upload the portable app as a downloadable artifact
         uses: actions/upload-artifact@v4
         with:
           name: ATP_Analyzer-windows
-          path: dist/ATP_Analyzer/
+          path: ${{ env.APP_DIR }}/
           retention-days: 14
 
       # Publish a Release either when this run was triggered by a version
-      # tag (any push-to-branch run has a refs/heads/... ref, never
-      # refs/tags/...), OR when manually dispatched with a "release_tag"
-      # input filled in. Zips the portable, no-install-needed app so
-      # anyone can download it directly (no GitHub login needed, unlike a
-      # plain workflow artifact).
+      # tag, OR when manually dispatched with a "release_tag" filled in.
       - name: Zip the portable app for the release
         if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
-        run: Compress-Archive -Path dist/ATP_Analyzer/* -DestinationPath ATP_Analyzer-windows.zip
+        shell: pwsh
+        # 7-Zip (preinstalled on the runner) is far faster than
+        # Compress-Archive on a folder with tens of thousands of files.
+        run: 7z a -tzip -mx=5 ATP_Analyzer-windows.zip "./$env:APP_DIR"
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
